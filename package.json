@@ -1,0 +1,15 @@
+{
+  "name": "reactor-workflow",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "pnpm --filter @powerhousedao/reactor-connectors build && pnpm --filter workflow build",
+    "test": "pnpm -r --no-bail test",
+    "tsc": "pnpm -r tsc",
+    "lint": "pnpm -r lint"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  },
+  "packageManager": "pnpm@11.5.0"
+}

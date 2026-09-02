@@ -1,0 +1,40 @@
+packages:
+  - "packages/*"
+allowBuilds:
+  '@apollo/protobufjs': set this to true or false
+  '@datadog/pprof': set this to true or false
+  '@parcel/watcher': set this to true or false
+  '@reown/appkit': set this to true or false
+  bufferutil: set this to true or false
+  esbuild: set this to true or false
+  keccak: set this to true or false
+  protobufjs: set this to true or false
+  utf-8-validate: set this to true or false
+minimumReleaseAgeExclude:
+  - '@powerhousedao/analytics-engine-browser@6.2.2-dev.72'
+  - '@powerhousedao/analytics-engine-core@6.2.2-dev.72'
+  - '@powerhousedao/analytics-engine-graphql@6.2.2-dev.72'
+  - '@powerhousedao/analytics-engine-knex@6.2.2-dev.72'
+  - '@powerhousedao/analytics-engine-pg@6.2.2-dev.72'
+  - '@powerhousedao/builder-tools@6.2.2-dev.72'
+  - '@powerhousedao/codegen@6.2.2-dev.72'
+  - '@powerhousedao/common@6.2.2-dev.72'
+  - '@powerhousedao/config@6.2.2-dev.72'
+  - '@powerhousedao/connect@6.2.2-dev.72'
+  - '@powerhousedao/design-system@6.2.2-dev.72'
+  - '@powerhousedao/opentelemetry-instrumentation-reactor@6.2.2-dev.72'
+  - '@powerhousedao/pglite-fs@6.2.2-dev.72'
+  - '@powerhousedao/ph-cli@6.2.2-dev.72'
+  - '@powerhousedao/powerhouse-vetra-packages@6.2.2-dev.72'
+  - '@powerhousedao/reactor-api@6.2.2-dev.72'
+  - '@powerhousedao/reactor-attachments@6.2.2-dev.72'
+  - '@powerhousedao/reactor-browser@6.2.2-dev.72'
+  - '@powerhousedao/reactor-drive@6.2.2-dev.72'
+  - '@powerhousedao/reactor-group@6.2.2-dev.72'
+  - '@powerhousedao/reactor-mcp@6.2.2-dev.72'
+  - '@powerhousedao/reactor@6.2.2-dev.72'
+  - '@powerhousedao/shared@6.2.2-dev.72'
+  - '@powerhousedao/switchboard@6.2.2-dev.72'
+  - '@powerhousedao/vetra@6.2.2-dev.72'
+  - '@renown/sdk@6.2.2-dev.72'
+  - document-model@6.2.2-dev.72
