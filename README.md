@@ -113,6 +113,8 @@ Connect-side flags live in `packages/workflow/powerhouse.config.json` under
 
 ### AI assistant
 
+![Connect with the AI Assistant panel open next to a document](docs/images/connect-ai-assistant.png)
+
 With the flag on, Connect shows an "AI Assistant" tab under Settings and a
 chat button bottom-right. Enter any OpenAI-compatible endpoint there (base
 URL ending in `/v1`, optional API key, model id); the browser talks to the
