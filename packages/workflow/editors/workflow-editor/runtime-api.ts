@@ -236,7 +236,13 @@ export function checkConnection(
     workflowRuntime: { checkConnection: ConnectionCheckResult };
   }>(
     `mutation CheckConnection($connectionId: String!) {
-      workflowRuntime { checkConnection(connectionId: $connectionId) }
+      workflowRuntime {
+        checkConnection(connectionId: $connectionId) {
+          ok
+          detail
+          accountLabel
+        }
+      }
     }`,
     { connectionId },
   ).then((data) => data.workflowRuntime.checkConnection);

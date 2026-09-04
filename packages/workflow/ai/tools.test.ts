@@ -431,9 +431,15 @@ describe("checkConnection", () => {
     const [url, init] = fetch.mock.calls[0] as [string, { body: string }];
     expect(url).toBe("http://localhost:4001/graphql/workflow-runtime");
     const sent = JSON.parse(init.body) as {
+      query: string;
       variables: { connectionId: string };
     };
     expect(sent.variables).toEqual({ connectionId: "conn-1" });
+    // The supergraph rejects a ConnectionCheckResult field without a
+    // selection set, so the mutation must request every subfield.
+    expect(sent.query).toContain("ok");
+    expect(sent.query).toContain("detail");
+    expect(sent.query).toContain("accountLabel");
   });
 });
 
