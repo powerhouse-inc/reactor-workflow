@@ -6,9 +6,8 @@ connector engine, extracted from the powerhouse monorepo
 
 - `packages/workflow` — reactor package: `powerhouse/workflow` and
   `powerhouse/connection` document models, the workflow-runtime subgraph and
-  run journal, the document-event trigger processor, and four editors
-  (classic builder, vendored Activepieces builder, connection editor, and the
-  Workflow Studio drive app).
+  run journal, the document-event trigger processor, and three editors
+  (workflow builder, connection editor, and the Workflow Studio drive app).
 - `packages/reactor-connectors` — the engine: Activepieces piece loading with
   worker isolation, block executor, expressions, connection auth shaping.
 
