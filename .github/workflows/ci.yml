@@ -37,4 +37,8 @@ jobs:
       - run: pnpm run build
       - run: pnpm run tsc
       - run: pnpm run lint
-      - run: pnpm run test
+
+      # vitest directly, not `pnpm test`: reactor-connectors' test script
+      # rebuilds first, which the build step above already did, and that
+      # dependency is what makes pnpm serialise the two suites.
+      - run: pnpm -r --no-sort --workspace-concurrency=2 exec vitest run
