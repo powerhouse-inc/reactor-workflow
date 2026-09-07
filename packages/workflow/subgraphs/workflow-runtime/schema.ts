@@ -62,6 +62,11 @@ export const schema: DocumentNode = gql`
     """
     connections: [ConnectionRecord!]!
     """
+    The webhook endpoint of a core#webhook workflow: the URL to hand the
+    provider. Null when the workflow has never had a webhook trigger.
+    """
+    webhookEndpoint(workflowId: String!): WebhookEndpointRecord
+    """
     Secret metadata (label, version, status). Never the value.
     """
     secret(ref: String!): SecretRecord
@@ -111,6 +116,18 @@ export const schema: DocumentNode = gql`
     ok: Boolean!
     detail: String
     accountLabel: String
+  }
+
+  type WebhookEndpointRecord {
+    workflowId: String!
+    url: String!
+    "server | adapter | none — how the route reached the HTTP stack"
+    transport: String!
+    "False when the transport re-encodes bodies; signed schemes then refuse"
+    rawBodyVerification: Boolean!
+    "True while the workflow is ENABLED with a valid webhook trigger"
+    armed: Boolean!
+    createdAt: String!
   }
 
   type TriggerStateRecord {

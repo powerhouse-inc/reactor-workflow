@@ -6,7 +6,7 @@ import {
   ExpressionTokenLine,
   useExpressionField,
 } from "./ExpressionPicker.js";
-import type { BlockForm, DesignTimeService } from "./forms.js";
+import type { BlockForm, DesignTimeService, WebhookEndpoint } from "./forms.js";
 import {
   flowPorts,
   type RetryPolicyModel,
@@ -142,6 +142,7 @@ function ConfigSection(props: {
           onChange={props.onChange}
           scopeStepId={props.scopeStepId}
           connectionId={props.connectionId}
+          secrets={props.designTime?.secrets}
           loadOptions={
             props.designTime
               ? (propName, current) =>
@@ -722,6 +723,101 @@ function TestTriggerSection(props: { onTest: () => Promise<unknown> }) {
   );
 }
 
+// The endpoint URL is the whole credential, so it is read from the runtime
+// rather than derived here, and only exists once the workflow is enabled.
+function WebhookUrlSection(props: {
+  load: () => Promise<WebhookEndpoint | null>;
+}) {
+  const [state, setState] = useState<
+    | { kind: "loading" }
+    | { kind: "empty" }
+    | { kind: "error"; message: string }
+    | { kind: "ready"; endpoint: WebhookEndpoint }
+  >({ kind: "loading" });
+  const [copied, setCopied] = useState(false);
+  const { load } = props;
+
+  useEffect(() => {
+    let cancelled = false;
+    setState({ kind: "loading" });
+    load().then(
+      (endpoint) => {
+        if (cancelled) return;
+        setState(endpoint ? { kind: "ready", endpoint } : { kind: "empty" });
+      },
+      (error: unknown) => {
+        if (cancelled) return;
+        setState({
+          kind: "error",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [load]);
+
+  return (
+    <div>
+      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Endpoint URL
+      </span>
+      {state.kind === "loading" ? (
+        <p className="text-xs text-slate-400">Loading…</p>
+      ) : null}
+      {state.kind === "empty" ? (
+        <p className="text-[11px] text-slate-400">
+          Enable the workflow to mint its endpoint.
+        </p>
+      ) : null}
+      {state.kind === "error" ? (
+        <p className="text-[11px] text-red-600">{state.message}</p>
+      ) : null}
+      {state.kind === "ready" ? (
+        <>
+          <div className="flex gap-1">
+            <input
+              readOnly
+              className="w-full rounded border border-slate-300 bg-slate-50 px-2 py-1.5 font-mono text-[11px] text-slate-700"
+              value={state.endpoint.url}
+              onFocus={(event) => event.currentTarget.select()}
+            />
+            <button
+              type="button"
+              className="shrink-0 rounded border border-slate-300 px-2 text-xs text-slate-600 hover:border-slate-400"
+              onClick={() => {
+                navigator.clipboard.writeText(state.endpoint.url).then(
+                  () => setCopied(true),
+                  () => undefined,
+                );
+              }}
+            >
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          {!state.endpoint.armed ? (
+            <p className="mt-1 rounded bg-amber-50 px-2 py-1 text-[11px] text-amber-700">
+              Not accepting deliveries: the workflow is disabled or its webhook
+              config is invalid.
+            </p>
+          ) : null}
+          {!state.endpoint.rawBodyVerification ? (
+            <p className="mt-1 rounded bg-amber-50 px-2 py-1 text-[11px] text-amber-700">
+              This reactor cannot supply raw request bytes, so signed schemes
+              will be refused.
+            </p>
+          ) : null}
+          <p className="mt-1 text-[11px] text-slate-400">
+            Treat this URL as a secret; anyone holding it can reach the
+            endpoint.
+          </p>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 export function TriggerPanel(props: {
   trigger: TriggerModel;
   callbacks: WorkflowEditorCallbacks;
@@ -731,6 +827,11 @@ export function TriggerPanel(props: {
   const { trigger, callbacks } = props;
   const isPieceTrigger = trigger.blockType.includes("#trigger:");
   const form = useBlockForm(trigger.blockType, props.designTime);
+  // core#webhook, and any piece trigger the provider pushes to: both are
+  // reached through this workflow's endpoint URL.
+  const isWebhookTrigger =
+    trigger.blockType === "core#webhook" ||
+    (form !== "loading" && form?.triggerStrategy === "WEBHOOK");
   const missing = missingForBlock(form, trigger.config, trigger.connectionId);
   const setTrigger = (patch: {
     config?: unknown;
@@ -747,6 +848,9 @@ export function TriggerPanel(props: {
   return (
     <div className="flex flex-col gap-3 p-4">
       <PanelHeader title="Trigger" missing={missing} onClose={props.onClose} />
+      {isWebhookTrigger && props.designTime?.webhookEndpoint ? (
+        <WebhookUrlSection load={props.designTime.webhookEndpoint} />
+      ) : null}
       {isPieceTrigger ? (
         <ConnectionField
           key={`${trigger.id}-conn`}

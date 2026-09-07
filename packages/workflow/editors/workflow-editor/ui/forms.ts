@@ -23,6 +23,9 @@ export interface BlockForm {
   // Whether the block takes a connection: none hides the field entirely.
   auth?: "none" | "optional" | "required";
   props: BlockFormProp[];
+  // Piece triggers only: POLLING | WEBHOOK | APP_WEBHOOK. WEBHOOK triggers
+  // are fed by a request, so the panel shows their endpoint URL.
+  triggerStrategy?: string;
 }
 
 export interface ConnectionSummary {
@@ -32,6 +35,35 @@ export interface ConnectionSummary {
   authType: string;
   status: string;
   accountLabel: string | null;
+}
+
+export interface SecretStat {
+  ref: string;
+  label: string | null;
+  version: number;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Minting seam for PH_SECRET_REF props: the field takes a value and the
+// document only ever receives the ref that comes back.
+export interface SecretFormService {
+  save: (input: {
+    ref?: string;
+    value: string;
+    label: string;
+  }) => Promise<SecretStat>;
+  stat: (ref: string) => Promise<SecretStat | null>;
+}
+
+export interface WebhookEndpoint {
+  workflowId: string;
+  url: string;
+  transport: string;
+  rawBodyVerification: boolean;
+  armed: boolean;
+  createdAt: string;
 }
 
 export interface DesignTimeService {
@@ -44,6 +76,10 @@ export interface DesignTimeService {
   ) => Promise<unknown>;
   // Runs the current workflow's piece trigger test hook; sample items back.
   testTrigger?: () => Promise<unknown>;
+  // The current workflow's webhook endpoint, for core#webhook triggers.
+  webhookEndpoint?: () => Promise<WebhookEndpoint | null>;
+  // Backs PH_SECRET_REF props; absent when the runtime refuses secret writes.
+  secrets?: SecretFormService;
   // powerhouse/connection documents for the connection picker.
   listConnections?: () => Promise<ConnectionSummary[]>;
   // Drops the cached listing after the picker creates a connection.
@@ -101,6 +137,21 @@ const documentActions = (
   required,
   description,
   hasDynamicResolver: true,
+});
+
+// Takes a secret VALUE and commits only the minted ref, the way the
+// connection editor's SecretField does; the document never holds the value.
+const secretRef = (
+  name: string,
+  displayName: string,
+  required = false,
+  description?: string,
+): BlockFormProp => ({
+  name,
+  displayName,
+  type: "PH_SECRET_REF",
+  required,
+  description,
 });
 
 const number = (
@@ -175,6 +226,91 @@ export const CORE_FORMS: Record<string, BlockForm> = {
         "Timezone",
         false,
         "IANA name, e.g. Europe/Lisbon; defaults to UTC",
+      ),
+    ],
+  },
+  "core#webhook": {
+    title: "Webhook",
+    requireAuth: false,
+    auth: "none",
+    props: [
+      dropdown(
+        "methods",
+        "Method",
+        [
+          { label: "POST", value: "POST" },
+          { label: "Any", value: "ANY" },
+          { label: "GET", value: "GET" },
+          { label: "PUT", value: "PUT" },
+          { label: "PATCH", value: "PATCH" },
+          { label: "DELETE", value: "DELETE" },
+        ],
+        true,
+      ),
+      dropdown(
+        "scheme",
+        "Verification",
+        [
+          { label: "None (token in the URL only)", value: "none" },
+          { label: "Shared token header", value: "token" },
+          { label: "HMAC-SHA256 hex", value: "hmac-sha256" },
+          { label: "GitHub (sha256=…)", value: "github" },
+          { label: "Stripe (t=…,v1=…)", value: "stripe" },
+        ],
+        true,
+        "Everything but None needs a signing secret",
+      ),
+      secretRef(
+        "secretRef",
+        "Signing secret",
+        false,
+        "The provider's signing secret; only the minted ref is stored",
+      ),
+      text(
+        "header",
+        "Signature header",
+        false,
+        "Defaults per scheme: x-webhook-token, x-signature, x-hub-signature-256, stripe-signature",
+      ),
+      number(
+        "toleranceSeconds",
+        "Replay window (seconds)",
+        false,
+        "Stripe only; rejects timestamps older than this. Default 300",
+      ),
+      text(
+        "dedupeField",
+        "Event id field",
+        false,
+        "Body field holding the provider's event id; a redelivery is then accepted without a second run",
+      ),
+      number(
+        "dedupeTtlSeconds",
+        "Dedupe window (seconds)",
+        false,
+        "How long an event id is remembered. Default 300",
+      ),
+      text(
+        "challengeField",
+        "Challenge field",
+        false,
+        "Echo this query param or body field back instead of running, for endpoint verification (e.g. challenge, hub.challenge)",
+      ),
+      dropdown(
+        "responseMode",
+        "Response",
+        [
+          { label: "Answer immediately (202)", value: "async" },
+          { label: "Wait for the run (200)", value: "sync" },
+        ],
+        false,
+        "Waiting holds the provider's socket for the whole run",
+      ),
+      number(
+        "responseStatus",
+        "Success status",
+        false,
+        "Status returned on acceptance. Default 202 async, 200 sync",
       ),
     ],
   },

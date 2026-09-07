@@ -48,6 +48,8 @@ interface BlockEntryDescriptor {
   displayName: string;
   requireAuth: boolean;
   props: BlockFormProp[];
+  // Triggers only: POLLING | WEBHOOK | APP_WEBHOOK.
+  strategy?: string;
 }
 
 interface BlockDescriptorResult {
@@ -78,6 +80,9 @@ export function getBlockForm(blockType: string): Promise<BlockForm | null> {
       const entry = descriptor?.action ?? descriptor?.trigger;
       if (!descriptor || !entry) return null;
       const isTrigger = !descriptor.action && Boolean(descriptor.trigger);
+      // A poll cadence is meaningless for a trigger the provider pushes to,
+      // so the prop is only offered where it actually applies.
+      const polled = isTrigger && entry.strategy !== "WEBHOOK";
       return {
         title: `${descriptor.displayName} · ${entry.displayName}`,
         requireAuth: entry.requireAuth,
@@ -86,7 +91,8 @@ export function getBlockForm(blockType: string): Promise<BlockForm | null> {
           : entry.requireAuth
             ? ("required" as const)
             : ("optional" as const),
-        props: isTrigger ? [...entry.props, POLL_INTERVAL_PROP] : entry.props,
+        props: polled ? [...entry.props, POLL_INTERVAL_PROP] : entry.props,
+        triggerStrategy: isTrigger ? entry.strategy : undefined,
       };
     });
     formCache.set(blockType, cached);
@@ -346,6 +352,35 @@ export async function fetchSecretStat(ref: string): Promise<SecretStat | null> {
     { ref },
   );
   return data.workflowRuntime.secret;
+}
+
+export interface WebhookEndpointRecord {
+  workflowId: string;
+  url: string;
+  transport: string;
+  rawBodyVerification: boolean;
+  armed: boolean;
+  createdAt: string;
+}
+
+// Never cached: the runtime mints the endpoint on the first call and `armed`
+// tracks the workflow's status.
+export async function fetchWebhookEndpoint(
+  workflowId: string,
+): Promise<WebhookEndpointRecord | null> {
+  const data = await gql<{
+    workflowRuntime: { webhookEndpoint: WebhookEndpointRecord | null };
+  }>(
+    `query WebhookEndpoint($workflowId: String!) {
+      workflowRuntime {
+        webhookEndpoint(workflowId: $workflowId) {
+          workflowId url transport rawBodyVerification armed createdAt
+        }
+      }
+    }`,
+    { workflowId },
+  );
+  return data.workflowRuntime.webhookEndpoint;
 }
 
 export async function testTrigger(workflowId: string): Promise<unknown> {

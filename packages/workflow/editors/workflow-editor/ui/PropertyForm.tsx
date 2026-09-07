@@ -9,7 +9,7 @@ import {
   useExpressionField,
 } from "./ExpressionPicker.js";
 import { hasExpressions } from "./expression-tokens.js";
-import type { BlockFormProp } from "./forms.js";
+import type { BlockFormProp, SecretFormService, SecretStat } from "./forms.js";
 import { isEmptyValue } from "./validation.js";
 
 // Splices text at the field's cursor and returns the updated value.
@@ -394,11 +394,132 @@ const TEXT_MODE_TYPES = new Set([
   "OBJECT",
 ]);
 
+const SECRET_REF_PREFIX = "secret://v1:";
+
+// Mirrors the connection editor's SecretField: the input takes the VALUE and
+// only the minted ref reaches the config. Pasting over a ref rotates it.
+function SecretRefField(props: {
+  prop: BlockFormProp;
+  value: unknown;
+  onCommit: (value: unknown) => void;
+  invalid: boolean;
+  secrets?: SecretFormService;
+}) {
+  const { secrets } = props;
+  const ref = typeof props.value === "string" ? props.value : "";
+  const managed = ref.startsWith(SECRET_REF_PREFIX);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [stat, setStat] = useState<SecretStat | null>(null);
+
+  useEffect(() => {
+    setStat(null);
+    if (!managed || !secrets) return;
+    let cancelled = false;
+    secrets.stat(ref).then(
+      (result) => {
+        if (!cancelled) setStat(result);
+      },
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [ref, managed, secrets]);
+
+  const commit = () => {
+    if (draft === "" || busy || !secrets) return;
+    setBusy(true);
+    setError(null);
+    secrets
+      .save({
+        ref: managed ? ref : undefined,
+        value: draft,
+        label: props.prop.displayName,
+      })
+      .then((result) => {
+        setDraft("");
+        if (result.ref !== ref) props.onCommit(result.ref);
+        else setStat(result);
+      })
+      .catch((requestError: unknown) => {
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : String(requestError),
+        );
+      })
+      .finally(() => setBusy(false));
+  };
+
+  if (!secrets) {
+    return (
+      <FieldShell prop={props.prop} invalid={props.invalid} as="div">
+        <p className="text-[11px] text-slate-400">
+          Managed secrets are unavailable in this session.
+        </p>
+      </FieldShell>
+    );
+  }
+  return (
+    <FieldShell
+      prop={props.prop}
+      invalid={props.invalid}
+      as="div"
+      error={error}
+    >
+      {managed ? (
+        <p className="mb-1 text-[11px] text-slate-500">
+          <span className="font-medium text-slate-600">
+            {stat?.label ?? ref}
+          </span>
+          {stat ? <span> · v{stat.version}</span> : null}
+          {stat?.status === "DELETED" ? (
+            <span className="font-medium text-red-600"> · deleted</span>
+          ) : null}
+        </p>
+      ) : null}
+      <div className="flex gap-1">
+        <input
+          className={`${inputClass} ${props.invalid ? invalidClass : ""}`}
+          type="password"
+          value={draft}
+          disabled={busy}
+          placeholder={
+            managed
+              ? "•••••••• — paste a new value to rotate"
+              : "Paste the secret value"
+          }
+          autoComplete="off"
+          spellCheck={false}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") commit();
+          }}
+          onBlur={commit}
+        />
+        {ref ? (
+          <button
+            type="button"
+            className={smallButtonClass}
+            title="Remove secret ref"
+            onClick={() => props.onCommit(undefined)}
+          >
+            ✕
+          </button>
+        ) : null}
+      </div>
+    </FieldShell>
+  );
+}
+
 function PropField(props: {
   prop: BlockFormProp;
   value: unknown;
   onCommit: (value: unknown) => void;
   loadOptions?: (propName: string) => Promise<unknown>;
+  secrets?: SecretFormService;
   scopeStepId?: string;
   // Changes whenever a refresher value or the connection changes.
   refresherKey: string;
@@ -504,6 +625,16 @@ function PropField(props: {
   );
 
   switch (prop.type) {
+    case "PH_SECRET_REF":
+      return (
+        <SecretRefField
+          prop={prop}
+          value={value}
+          onCommit={onCommit}
+          invalid={invalid}
+          secrets={props.secrets}
+        />
+      );
     case "PH_AUTOCOMPLETE":
       return (
         <FieldShell prop={prop} invalid={invalid}>
@@ -980,6 +1111,8 @@ export function PropertyForm(props: {
     propName: string,
     current: Record<string, unknown>,
   ) => Promise<unknown>;
+  // Backs PH_SECRET_REF props.
+  secrets?: SecretFormService;
   // Step whose config is being edited; scopes the expression picker.
   scopeStepId?: string;
   // Auth-dependent resolvers re-run when this changes.
@@ -1017,6 +1150,7 @@ export function PropertyForm(props: {
               ? (propName) => props.loadOptions!(propName, current)
               : undefined
           }
+          secrets={props.secrets}
           scopeStepId={props.scopeStepId}
           refresherKey={refresherKeyFor(prop, current, props.connectionId)}
           nested={props.nested}
