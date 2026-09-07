@@ -5,18 +5,35 @@ on:
     branches: [main]
   pull_request:
 
+# A new push to a PR supersedes the run in flight. Every commit on main still
+# gets its own run, so a regression is always attributed to one commit.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   ci:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --prefer-offline
+
+      # Restored after install, which prunes node_modules. Piece tarballs are
+      # immutable per name@version, so a stale entry is never wrong -- the key
+      # only changes to pick up bundles a new test asks for.
+      - name: Cache Activepieces piece bundles
+        uses: actions/cache@v6
+        with:
+          path: packages/reactor-connectors/node_modules/.cache/ap-bundles
+          key: ap-bundles-${{ hashFiles('packages/reactor-connectors/test/activepieces/*.test.ts') }}
+          restore-keys: ap-bundles-
+
       - run: pnpm run build
       - run: pnpm run tsc
       - run: pnpm run lint
