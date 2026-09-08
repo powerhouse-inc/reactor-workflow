@@ -184,7 +184,9 @@ describe("PaperlessClient list envelopes", () => {
     );
 
     expect(count).toBe(1);
-    expect(results[0].related_document).toBe(7);
+    // Raw v9 wire format: a *string* id, as paperless 2.18.4 really answers.
+    // normalizeTask is what turns it back into a number.
+    expect(results[0].related_document).toBe("7");
     expect(results[0].task_file_name).toBeNull();
   });
 });

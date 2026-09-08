@@ -19,6 +19,9 @@ export interface MockDocument {
   modified: string;
   archive_serial_number: number | null;
   original_file_name: string;
+  mime_type?: string;
+  // Server-side only, exactly like Document.has_archive_version: it decides
+  // what /download/ serves, and the API reports `archived_file_name` instead.
   has_archive_version: boolean;
   custom_fields?: { field: number; value: unknown }[];
   owner?: number | null;
@@ -194,6 +197,22 @@ export class MockPaperless {
     };
     this.tasks.set(task.task_id, task);
     return task;
+  }
+
+  // The document JSON as DocumentSerializer renders it: `has_archive_version`
+  // is a model property and never appears in the field list, so a client only
+  // learns about an archive copy from `archived_file_name`.
+  private serializeDocument(
+    document: MockDocument,
+  ): Record<string, unknown> {
+    const { has_archive_version, ...rest } = document;
+    return {
+      ...rest,
+      mime_type: document.mime_type ?? "application/pdf",
+      archived_file_name: has_archive_version
+        ? `archive-${document.id}.pdf`
+        : null,
+    };
   }
 
   private collectionFor(kind: string): Map<number, MockNamedObject> {
@@ -413,13 +432,17 @@ export class MockPaperless {
       const document = this.documents.get(id);
       if (!document) return this.json(404, { detail: "Not found." }, versionHeaders);
       if (method === "GET") {
-        return this.json(200, document, versionHeaders);
+        return this.json(200, this.serializeDocument(document), versionHeaders);
       }
       if (method === "PATCH" || method === "PUT") {
         const patch = (request.body ?? {}) as Partial<MockDocument>;
         const updated = { ...document, ...patch, modified: new Date().toISOString() };
         this.documents.set(id, updated);
-        return this.json(200, updated, versionHeaders);
+        return this.json(
+          200,
+          this.serializeDocument(updated),
+          versionHeaders,
+        );
       }
     }
 
@@ -447,11 +470,15 @@ export class MockPaperless {
       const ordering = request.query.ordering?.[0];
       if (ordering === "added") rows.sort((a, b) => a.added.localeCompare(b.added));
       const query = request.query.query?.[0];
-      const results = rows.map((row) =>
-        query
-          ? { ...row, __search_hit__: { score: 1, highlights: row.title, rank: 0 } }
-          : row,
-      );
+      const results = rows.map((row) => {
+        const serialized = this.serializeDocument(row);
+        return query
+          ? {
+              ...serialized,
+              __search_hit__: { score: 1, highlights: row.title, rank: 0 },
+            }
+          : serialized;
+      });
       return this.json(
         200,
         { count: results.length, next: null, previous: null, results },
@@ -613,10 +640,19 @@ function serializeTask(task: MockTask, version: number): Record<string, unknown>
     date_done: task.date_done ?? null,
   };
   if (version < 10) {
+    // A real 2.18 server answers with Celery's uppercase state, a *string*
+    // related_document and `task_name` instead of `task_type` — all three
+    // verified against paperless-ngx 2.18.4.
     return {
       ...base,
+      status: task.status.toUpperCase(),
+      task_name: task.task_type,
+      type: "auto_task",
       task_file_name: task.input_data?.filename ?? null,
-      related_document: task.related_document_ids[0] ?? null,
+      related_document:
+        task.related_document_ids[0] === undefined
+          ? null
+          : String(task.related_document_ids[0]),
     };
   }
   return {

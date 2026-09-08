@@ -45,7 +45,7 @@ export const getDocumentFile = createAction({
       required: true,
       defaultValue: "archive",
       description:
-        "Archive is the searchable PDF paperless produced (it already carries a text layer); Original is the file as uploaded. Archive falls back to the original when the document has none.",
+        "Archive is the searchable PDF paperless produced (it already carries a text layer); Original is the file as uploaded. Archive falls back to the original when the document has none — the document's archived_file_name says whether it has one.",
       options: {
         options: [
           { label: "Archive (OCR'd PDF)", value: "archive" },

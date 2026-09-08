@@ -177,6 +177,28 @@ describe("upload_document", () => {
     expect(result.adopted).toBe(false);
   });
 
+  it("finishes the wait on a 2.18 server's uppercase status", async () => {
+    await mock.close();
+    mock = await startMockPaperless({
+      allowedVersions: [9],
+      serverVersion: "2.18.4",
+    });
+
+    const promise = runAction(uploadDocument, {
+      auth: authFor(mock),
+      props: { file, wait_for_consumption: true, timeout_seconds: 10 },
+    });
+    const task = await waitFor(() => [...mock.tasks.values()][0]);
+    const document = mock.seedDocument();
+    task.status = "success";
+    task.related_document_ids = [document.id];
+
+    const result = (await promise) as Record<string, unknown>;
+    expect(result.status).toBe("success");
+    expect(result.document_id).toBe(document.id);
+    expect(result.timed_out).toBeUndefined();
+  });
+
   it("returns the pending task rather than failing when the wait expires", async () => {
     const result = (await runAction(uploadDocument, {
       auth: authFor(mock),

@@ -33,15 +33,29 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+// A paperless 2.18 server answers `related_document` as a *string* ("1") and
+// its status in Celery's uppercase form ("SUCCESS"), while 3.x uses a list of
+// ints and lowercase TextChoices. Both are coerced here so no caller has to
+// know which server answered.
+function toDocumentIds(value: unknown): number[] {
+  const candidates = Array.isArray(value) ? value : [value];
+  return candidates
+    .map((entry) =>
+      typeof entry === "number"
+        ? entry
+        : typeof entry === "string" && entry.trim() !== ""
+          ? Number(entry)
+          : Number.NaN,
+    )
+    .filter((entry) => Number.isInteger(entry));
+}
+
 export function normalizeTask(row: unknown): NormalizedTask | undefined {
   if (!isRecord(row)) return undefined;
-  const ids = Array.isArray(row.related_document_ids)
-    ? row.related_document_ids.filter(
-        (id): id is number => typeof id === "number",
-      )
-    : typeof row.related_document === "number"
-      ? [row.related_document]
-      : [];
+  const ids =
+    row.related_document_ids !== undefined
+      ? toDocumentIds(row.related_document_ids)
+      : toDocumentIds(row.related_document);
   const inputData = isRecord(row.input_data) ? row.input_data : undefined;
   const filename =
     typeof inputData?.filename === "string"
@@ -51,8 +65,16 @@ export function normalizeTask(row: unknown): NormalizedTask | undefined {
         : undefined;
   return {
     task_id: typeof row.task_id === "string" ? row.task_id : "",
-    status: typeof row.status === "string" ? row.status : "unknown",
-    task_type: typeof row.task_type === "string" ? row.task_type : undefined,
+    // Lowercased: 2.18 reports SUCCESS/FAILURE/REVOKED, 3.x success/failure/
+    // revoked, and the poll loop must terminate on either.
+    status:
+      typeof row.status === "string" ? row.status.toLowerCase() : "unknown",
+    task_type:
+      typeof row.task_type === "string"
+        ? row.task_type
+        : typeof row.task_name === "string"
+          ? row.task_name
+          : undefined,
     document_ids: ids,
     document_id: ids[0],
     filename,

@@ -1,0 +1,38 @@
+# A throwaway paperless-ngx for the live suite in e2e.test.ts.
+#
+# Host networking is deliberate: the webhook test needs paperless to POST back
+# to a listener the test process owns, and on a bridge network that means
+# host.docker.internal, which many hosts drop at the firewall. On the host
+# netns both directions are plain loopback. The ports are non-default so this
+# never collides with a real paperless on 8000/6379.
+#
+#   docker compose -f test/e2e-compose.yml up -d
+#   PAPERLESS_E2E_URL=http://localhost:18000 pnpm vitest run test/e2e.test.ts
+#   docker compose -f test/e2e-compose.yml down -v
+services:
+  broker:
+    image: docker.io/library/redis:7
+    network_mode: host
+    command: ["redis-server", "--port", "16379"]
+    restart: unless-stopped
+
+  webserver:
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    network_mode: host
+    depends_on:
+      - broker
+    environment:
+      PAPERLESS_PORT: "18000"
+      PAPERLESS_REDIS: redis://localhost:16379
+      PAPERLESS_URL: http://localhost:18000
+      PAPERLESS_TIME_ZONE: UTC
+      PAPERLESS_OCR_LANGUAGE: eng
+      PAPERLESS_ADMIN_USER: admin
+      PAPERLESS_ADMIN_PASSWORD: paperless-e2e
+      PAPERLESS_ADMIN_MAIL: admin@example.com
+      # Required since 3.x; any value works for a throwaway instance.
+      PAPERLESS_SECRET_KEY: e2e-only-not-a-real-secret
+      # The delivery target is loopback, which counts as internal.
+      PAPERLESS_WEBHOOKS_ALLOW_INTERNAL_REQUESTS: "true"
+      PAPERLESS_TASK_WORKERS: "1"
+      PAPERLESS_THREADS_PER_WORKER: "1"

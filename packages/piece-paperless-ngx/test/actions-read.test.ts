@@ -128,7 +128,7 @@ describe("get_task", () => {
     expect(result.filename).toBe("scan.pdf");
   });
 
-  it("normalizes the v9 task shape to the same fields", async () => {
+  it("normalizes the 2.18 task shape to the same fields", async () => {
     await mock.close();
     mock = await startMockPaperless({
       allowedVersions: [9],
@@ -145,8 +145,15 @@ describe("get_task", () => {
       props: { task_id: task.task_id },
     })) as Record<string, unknown>;
 
+    // A 2.18 server sends "SUCCESS" and related_document as the string "42";
+    // both have to land on the same fields a 3.x server produces, or the
+    // consumption poll never terminates.
+    expect((result.raw as Record<string, unknown>).status).toBe("SUCCESS");
+    expect((result.raw as Record<string, unknown>).related_document).toBe("42");
+    expect(result.status).toBe("success");
     expect(result.document_id).toBe(42);
     expect(result.filename).toBe("scan.pdf");
+    expect(result.task_type).toBe("consume_file");
   });
 
   it("reports an unknown task rather than failing", async () => {

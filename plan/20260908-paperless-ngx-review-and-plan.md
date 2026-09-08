@@ -1,6 +1,7 @@
 # Paperless-ngx Piece — Review Findings and Implementation Plan
 
-**Date:** 2026-09-08 · **Status:** implemented (P0–P5 in code; publish, upstream PR and live e2e outstanding)
+**Date:** 2026-09-08 · **Status:** implemented and verified live against paperless-ngx 3.0.5 and 2.18.4
+(publish and the upstream PR outstanding)
 **Amends:** [`20260908-paperless-ngx-piece-design.md`](./20260908-paperless-ngx-piece-design.md) — read that
 for the design; this document records where verification changed it, and the task order that follows.
 
@@ -117,9 +118,14 @@ original; `thumb` returns the webp thumbnail.
 So `/download/` yields the **archive** (the OCR'd PDF with a text layer), and `preview` differs from
 `download` only in Content-Disposition.
 
-**Change:** variants become `archive` (default), `original`, `thumbnail`; `preview` is dropped. The output
-reports which was served, using the document's `has_archive_version`. This is also the variant that
-matters downstream: the archive already has a text layer.
+**Change:** variants become `archive` (default), `original`, `thumbnail`; `preview` is dropped. This is
+also the variant that matters downstream: the archive already has a text layer.
+
+Corrected during the live run: `has_archive_version` is a *model property* (`archive_filename is not
+None`) that the serializer never exposes — a client learns whether an archive exists from
+**`archived_file_name`** (`serialisers.py:1058`, field list at `:1304`), which is null for, say, a
+`text/plain` upload. The action does not fetch it (that would cost a request per download); a workflow
+that needs certainty reads it from `get_document`.
 
 ### C8 — `name__iexact` exists on all five object types
 
@@ -250,11 +256,48 @@ one document; no payload → cursor sweep).
 
 ---
 
-## 4. What was built, and where it deviated
+## 4. What the live run found
+
+Ran against two real servers: **3.0.5** (`test/e2e-compose.yml`, 16 tests) and **2.18.4**
+(`test/e2e-legacy-compose.yml`, 4 tests). Both suites pass and are skipped unless their env var is set,
+so CI stays offline. Two of the corrections above were confirmed exactly, and the run found two things
+no mock could have.
+
+**Confirmed.** C1, from paperless's own log, on the first attempt when the delivery target was
+unreachable:
+
+```
+Document matched WorkflowTrigger 1 from Workflow: Powerhouse: document_added
+Applying WorkflowAction 1
+Task documents.workflows.webhooks.send_webhook received
+Failed attempt sending webhook to http://…: timed out
+Task … raised expected: ConnectTimeout('timed out')
+```
+
+"raised **expected**" is `throws=(httpx.HTTPError,)`: no retry, event gone. The reconciliation sweep
+recovered it in the next test, which is the whole argument for C1. Once the target was reachable the
+same path logged `Webhook sent … succeeded`, with the body, the header and the interpolated `doc_id`
+asserted by the test. And the duplicate upload really did produce a second document, as C4 predicted.
+
+**Found: `has_archive_version` is not in the API.** It is a model property
+(`archive_filename is not None`) that the serializer only uses internally; a client learns whether an
+archive exists from **`archived_file_name`**. Corrected in C7 above, in the mock and in the action's
+description.
+
+**Found: paperless 2.18 answers task rows in a different wire format than its own v9 emulation in 3.x.**
+`status` is Celery's uppercase `SUCCESS`, `related_document` is the *string* `"1"`, and the type field is
+`task_name`, not `task_type`. The first of those was a real bug: `isComplete` compared against the
+lowercase `COMPLETE_STATUSES` from `main`, so on a 2.18 server the consumption poll never terminated —
+`upload_document` burned its whole timeout and returned `pending` for a document that had been created
+seconds earlier. The e2e took 302 s; after the fix, 2.8 s. `normalizeTask` now lowercases the status and
+coerces the ids, and the mock reproduces the 2.x wire format so the offline suite pins it.
+
+## 5. What was built, and where it deviated
 
 All sixteen tasks landed except the ones that need something outside the repo
-(npm publish, the upstream PR, the manual live e2e). 514 tests pass across the
-three packages; `pnpm -r tsc` and `pnpm -r lint` are clean.
+(npm publish, the upstream PR). 515 offline tests pass across the three
+packages, plus 20 live ones behind env vars; `pnpm -r tsc` and `pnpm -r lint`
+are clean.
 
 | Deviation | Why |
 |---|---|
@@ -266,12 +309,12 @@ three packages; `pnpm -r tsc` and `pnpm -r lint` are clean.
 | Attachment reads are authorized against the workflow document, carried on an `AsyncLocalStorage` run scope | `IAttachmentClient.download` needs a document id, and the block executor is shared across concurrent runs, so the scope cannot live on the executor |
 | One file cap (`PH_PIECE_MAX_FILE_BYTES`, 8 MiB) on every `toApFile` branch | C9. The 25 MB write cap in the design would have let a piece emit a file the inbound path refuses |
 
-Not built, and deliberately: `outputSchema` field lists, the npm publish, the
-upstream `community/paperless-ngx` PR, and the docker-compose live e2e. The
+Not built, and deliberately: `outputSchema` field lists, the npm publish and
+the upstream `community/paperless-ngx` PR. The
 piece's `i18n/translation.json` exists for the upstream path — 0.32.0 has no
 `i18n` parameter on `createAction`.
 
-## 5. Still open
+## 6. Still open
 
 - **Reconciliation interval** for webhook triggers: 15 min is the proposed default. Cheap, and it bounds
   worst-case loss; a user who trusts their network can raise it.

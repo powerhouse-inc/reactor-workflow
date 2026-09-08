@@ -1,0 +1,32 @@
+# A pre-3.0 paperless for e2e-legacy.test.ts. Its API tops out at version 9,
+# which is what makes it worth running: a client that pinned version 10 would
+# 406 on every request, and its task rows use Celery's uppercase states with a
+# string `related_document`.
+#
+#   docker compose -f test/e2e-legacy-compose.yml up -d
+#   PAPERLESS_LEGACY_E2E_URL=http://localhost:18001 \
+#   pnpm vitest run test/e2e-legacy.test.ts
+#   docker compose -f test/e2e-legacy-compose.yml down -v
+#
+# A bridge network is fine here: this half never receives a webhook, so it
+# needs no route back to the test process.
+services:
+  broker:
+    image: docker.io/library/redis:7
+    restart: unless-stopped
+
+  webserver:
+    image: ghcr.io/paperless-ngx/paperless-ngx:2.18.4
+    depends_on:
+      - broker
+    ports:
+      - "18001:8000"
+    environment:
+      PAPERLESS_REDIS: redis://broker:6379
+      PAPERLESS_SECRET_KEY: e2e-only-not-a-real-secret
+      PAPERLESS_URL: http://localhost:18001
+      PAPERLESS_TIME_ZONE: UTC
+      PAPERLESS_ADMIN_USER: admin
+      PAPERLESS_ADMIN_PASSWORD: paperless-e2e
+      PAPERLESS_TASK_WORKERS: "1"
+      PAPERLESS_THREADS_PER_WORKER: "1"
