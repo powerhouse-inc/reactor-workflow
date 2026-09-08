@@ -32,6 +32,7 @@ export interface MockDocling {
     query: URLSearchParams;
     headers: Record<string, string | string[]>;
   }>;
+  requestBodies: string[];
   pollCount: number;
 }
 
@@ -81,6 +82,7 @@ function successResponse(filename: string, formats: string[]) {
 export async function startMockDocling(opts: MockDoclingOptions = {}): Promise<MockDocling> {
   const tasks = new Map<string, Task>();
   const requests: MockDocling["requests"] = [];
+  const requestBodies: string[] = [];
   let pollCount = 0;
   let seq = 0;
   let backpressureLeft = opts.backpressure ?? 0;
@@ -120,8 +122,10 @@ export async function startMockDocling(opts: MockDoclingOptions = {}): Promise<M
     } = {};
     if (req.method === "POST") {
       try {
+        const raw = await readBody(req);
+        requestBodies.push(raw);
         // JSON.parse is `any`-typed; narrow to the declared body shape.
-        body = JSON.parse((await readBody(req)) || "{}") as typeof body;
+        body = JSON.parse(raw || "{}") as typeof body;
       } catch {
         return json(res, 422, { detail: "invalid JSON" });
       }
@@ -234,6 +238,7 @@ export async function startMockDocling(opts: MockDoclingOptions = {}): Promise<M
         server.close((err) => (err ? reject(err) : resolve())),
       ),
     requests,
+    requestBodies,
     get pollCount() {
       return pollCount;
     },
