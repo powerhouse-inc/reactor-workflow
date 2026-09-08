@@ -64,7 +64,9 @@ describe("health action", () => {
           { type: "CUSTOM_AUTH", props: { base_url: mock.baseUrl, api_key: "k-test" } },
         ) as never,
       );
-      expect(out).toEqual({ status: "ok", versions: expect.objectContaining({ "docling-serve": "1.32.0", docling: "2.126.0" }) });
+      // vitest 4.1.1 types expect.objectContaining as `any`; `as unknown` is the
+      // minimal silencer for no-unsafe-assignment.
+      expect(out).toEqual({ status: "ok", versions: expect.objectContaining({ "docling-serve": "1.32.0", docling: "2.126.0" }) as unknown });
     } finally {
       await mock.close();
     }

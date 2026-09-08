@@ -157,5 +157,6 @@ it("chunk endpoint returns the canned chunks", async () => {
     body: JSON.stringify({ sources: [{ kind: "http", url: "https://example.com/c.pdf" }] }),
   });
   expect(res.status).toBe(200);
-  expect((await res.json()) as unknown).toMatchObject({ chunks: expect.any(Array) });
+  // vitest 4.1.1 types expect.any as `any`; `as unknown` is the minimal silencer.
+  expect((await res.json()) as unknown).toMatchObject({ chunks: expect.any(Array) as unknown });
 });

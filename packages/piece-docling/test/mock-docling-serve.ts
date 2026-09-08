@@ -119,7 +119,8 @@ export async function startMockDocling(opts: MockDoclingOptions = {}): Promise<M
     } = {};
     if (req.method === "POST") {
       try {
-        body = JSON.parse((await readBody(req)) || "{}");
+        // JSON.parse is `any`-typed; narrow to the declared body shape.
+        body = JSON.parse((await readBody(req)) || "{}") as typeof body;
       } catch {
         return json(res, 422, { detail: "invalid JSON" });
       }
@@ -201,7 +202,7 @@ export async function startMockDocling(opts: MockDoclingOptions = {}): Promise<M
     if (req.method === "POST" && isSync) {
       const sources = body.sources ?? [];
       if (sources.length === 0) return json(res, 422, { detail: "sources must be non-empty" });
-      const first = sources[0]!;
+      const first = sources[0]; // guarded by the empty check above
       if (first.kind === "http" && String(first.url).endsWith(".zip")) {
         return json(res, 422, { detail: "zip sources are not supported" });
       }
