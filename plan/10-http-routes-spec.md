@@ -1,6 +1,6 @@
 # 10 — Package-hosted HTTP routes and webhooks
 
-Status: **implemented**, awaiting release. Layers 0-2 and the workflow port are
+Status: **implemented and settled**, awaiting release. Layers 0-2 and the workflow port are
 built and tested; §8 records what shipped, what changed under contact with the
 code, and what was deliberately deferred. `webhook-router.ts` is deleted.
 
@@ -203,9 +203,13 @@ namespace forced rather than conventional.
 
 ```ts
 export interface IHttpScope {
-  /** The package's resolved npm name, used verbatim in the path; read-only. */
-  readonly namespace: string;
-  /** Absolute public base for this scope: https://host/api/<namespace> */
+  /**
+   * Who the scope belongs to: a package's resolved npm name, or the host's name
+   * for one of its own groups (§3.4). An identity, not a URL fragment — it is in
+   * the path for a package scope and absent from a host one.
+   */
+  readonly owner: string;
+  /** Absolute public base for this scope: https://host/api/<owner> */
   readonly baseUrl: string;
 
   // Fastify-style: shorthands for the common case, the object form for the rest.
@@ -229,6 +233,7 @@ export interface RouteOptions {
   auth?: "renown" | "renown-optional" | "public" | RouteAuthorizer;
   body?: "parsed" | "raw" | "stream" | "none";
   maxBodyBytes?: number;
+  /** Per client, where "client" depends on the host's `trustProxy` (§3.5). */
   rateLimit?: { perMinute: number };
   /** Prefix match; the handler also serves sub-paths. */
   prefix?: boolean;
@@ -466,6 +471,61 @@ optional, package-writable field (`graphql/types.ts:36`). The manager injects
 initializer runs *after* `super()`, so a package subgraph that declares
 `path = "/anything"` as a class field silently mounts itself wherever it likes.
 Nothing validates it.
+
+### 3.4 Host scopes: who owns the URL space
+
+Revised after the fact. The first pass baked the namespace into the scope
+itself, so the only thing a scope could be was a package namespace. That is
+wrong in one direction: it made *the host's own* endpoints inexpressible, and
+the proof was in this branch — the webhook service (§4) mounted
+`/webhooks/:token` straight on the adapter, bypassing the very layer it is
+documented as sitting on.
+
+`HttpRouteService.hostScope(name, mountPath)` closes it. **Namespacing is a
+package policy, not a property of route hosting.** A package is handed a scope
+it did not choose precisely because it is not trusted with the URL space; the
+host owns that space already — it holds the adapter — and its endpoints answer
+at paths that are part of a published contract a third party already holds: a
+webhook URL a provider registered, a protocol endpoint a client is configured
+with. Those cannot move under a namespace, and they cannot move when
+`basePath` changes either, so the mount path is taken verbatim rather than
+joined onto it.
+
+The containment property of §3.3 is untouched:
+
+* `hostScope` is on the **service**, not on `IHttpScope`. A package only ever
+  receives a scope, so it holds nothing it could name another path with.
+* A host mount **may not sit inside the package prefix**, so a host group can
+  never shadow a package's namespace — the one thing the structural prefix
+  exists to prevent.
+* A host mount must be one literal prefix: absolute, not the root, no traversal
+  segment, no pattern segment.
+* A host scope has **no webhooks of its own**. A token-addressed endpoint
+  belongs to whoever minted the token, which is always a package.
+
+How this was arrived at is worth recording, because it is the method §8.3 asked
+for. Two subagents were given the two in-tree consumers — attachments (7 routes,
+streaming both ways, real `HEAD`, forwarded-header base URLs, two auth modes)
+and MCP (a socket-owning transport at a client-configured path) — on separate
+throwaway branches, and told to resolve the URL-ownership problem or to argue
+the migration should not happen. Neither saw the other's work. Both concluded
+the scope was sufficient *except* for the base, and both proposed the same
+primitive under different names. Neither migration is taken here; the primitive
+is.
+
+### 3.5 Who a rate limit is charged to
+
+`rateLimit` keyed on `req.socket.remoteAddress` alone, which behind
+switchboard-lb is the balancer for every caller — so a declared limit throttled
+unrelated clients into one bucket. `X-Forwarded-For` names the real client and
+is also client-written, so believing it with no proxy in front lets a caller
+rotate its own key past every limit.
+
+There is no value that is right for both topologies, so the host declares which
+it is: `trustProxy` on `HttpRouteServiceOptions`, off by default, set on by the
+reactor because a balancer is always in front of a deployed one. Written down
+here because the option looks like a nicety and is actually the difference
+between a limit that is unsafe and one that is useless.
 
 ## 4. Layer 2 — `IWebhookScope`
 
@@ -757,21 +817,30 @@ the Fetch bridge buffered responses (§2.2).
 
 ### 8.1 What shipped
 
-Monorepo branch `feat/core-http-routes` (11 commits), `reactor-workflow` branch
-`workflow/webhook-trigger` (3 commits on top of the original feature).
+Monorepo branch `feat/core-http-routes`, [powerhouse#2980][pr-core];
+`reactor-workflow` branch `workflow/webhook-trigger`,
+[reactor-workflow#4][pr-wf].
+
+[pr-core]: https://github.com/powerhouse-inc/powerhouse/pull/2980
+[pr-wf]: https://github.com/powerhouse-inc/reactor-workflow/pull/4
 
 | Step | State |
 | --- | --- |
 | 1. Layer 0 — registry dispatch, raw bodies, streaming, `dispose()`, params, `PATCH`, honest `prefix` | done |
 | 2. `IHttpScope` — verbatim-name namespace, structural prefix, four auth modes, disposal | done |
 | 3. Threaded through `SubgraphArgs`, `BaseSubgraph.http`, processor host module | done; `ISubgraph.path` hole deferred to #2972 |
-| 4. Migrate in-tree consumers (attachments, MCP, `d/:drive`) | **not started** — see §8.3 |
+| 4. Migrate in-tree consumers (attachments, MCP; **not** `d/:drive`, which never used the adapter) | **not taken, deliberately** — see §8.3 |
 | 5. `IWebhookScope` + token table in a core relational namespace | done |
 | 6. Port `reactor-workflow`, delete `webhook-router.ts` | done |
 | — Load balancer route classes for `/webhooks` and `/api` | done, not in the original plan |
+| — `hostScope`, and the webhook family moved off the adapter onto layer 1 | done, not in the original plan — §3.4 |
+| — `rateLimit` says who it charges; two inert `NodeRouteSpec` fields removed | done, not in the original plan — §3.5 |
 
-Tests: reactor-api 923, switchboard 163, reactor-mcp 43, reactor-workflow 333,
-switchboard-lb busted 18. End-to-end against a real switchboard with a real
+Tests: reactor-api 950, switchboard 163, reactor-mcp 43, reactor-workflow 332,
+switchboard-lb busted 18; root `tsc --build` and `pnpm lint` clean across all 21
+packages. `reactor-workflow` — the one real consumer of layer 1 — typechecks and
+passes unchanged against the reshaped interface, which is the evidence that the
+settling pass cost its consumer nothing. End-to-end against a real switchboard with a real
 PGlite store and a workflow armed through GraphQL: absolute URL minted, challenge
 echoed without firing a run, 202 on delivery, 200 and no second run on
 redelivery, token stable across restart, and disarmed / unknown / malformed
@@ -811,18 +880,50 @@ The naming collision: the adapter handle and the scope handle were both
 
 ### 8.3 Deliberately not done
 
-* **The in-tree consumers are not migrated** (step 4). Attachments, MCP and
-  `d/:drive` still call the adapter directly, and
-  `apps/switchboard/src/attachments/mount-auth.ts` still exists. Nothing about
-  the new layer forces them to move, and migrating attachments — seven routes
-  exercising request *and* response streaming, real `HEAD`, forwarded-header base
-  URLs and two auth modes — is the step that would prove the scope is
-  sufficient rather than merely adequate for webhooks. It is the natural next
-  piece of work and the honest test of §3.
+* **The in-tree consumers are not migrated** (step 4), deliberately rather than
+  for lack of time. Attachments and MCP still call the adapter directly and
+  `apps/switchboard/src/attachments/mount-auth.ts` still exists. Both *were*
+  migrated on throwaway branches to answer the design question — §3.4 has the
+  method and the result — and what those branches were for has been taken:
+  `hostScope`, `AuthorizerResult` carrying its own response, and the removal of
+  two inert `NodeRouteSpec` fields. The migrations themselves are host work, and
+  this pass is about the package-facing contract.
+
+  Step 4 named three consumers and there are two: **`d/:drive` never used
+  `mountNodeRoute` at all.**
+
+  What the branches paid for beyond the primitive, recorded because these are
+  the next real questions about layer 1 rather than hypotheticals: attachments
+  cannot use `transport.baseUrl` for a download target, because it carries
+  `x-forwarded-prefix` while the byte route it points at does not; and MCP loses
+  `/mcp`'s body-size cap, because `nodeRoute` has no "parsed body *and* the
+  socket" mode and the protocol implementation reads the stream itself. Neither
+  is fixed here.
 * **No token migration** from the workflow-local `webhook_endpoint` table. That
   table is dropped; the earlier endpoint never reached `main`, so no provider has
   a URL registered, and minting fresh under the new path beats a half-migration.
 * `#2971`, `#2972`, `#2973` as above.
+
+### 8.6 What only the workspace build could see
+
+Per-package `tsc` was green while `tsc --build` at the repo root — what CI runs
+as `pnpm typecheck` — had **seven errors**, so the first CI run on the PR failed.
+The root build resolves Express's `ParamsDictionary` and the DOM lib that makes
+`reply.send()`'s return type visible; neither package config surfaced them.
+
+One of the seven hid a runtime bug rather than a typing nit. Fastify treats a
+handler resolving to the reply as "this request is handled", and one resolving to
+`undefined` as nothing to send — so `sendResponse` returning the reply was
+load-bearing. Typing it `Promise<void>` and dropping that return emptied **every
+streamed body**; twelve adapter cases went red at once. The reply is threaded
+back through `#dispatch` instead.
+
+`SubgraphArgs.http` being required also broke two existing construction sites,
+which now supply a scope rather than the type being softened.
+
+The lesson for this plan: the gate is the workspace build. A package-local
+typecheck is not evidence, and neither is a package-local test run — the
+branch's own suites never reached any of the seven.
 
 ### 8.4 Release ordering
 
