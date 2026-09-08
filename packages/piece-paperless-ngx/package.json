@@ -1,0 +1,40 @@
+{
+  "name": "@powerhousedao/piece-paperless-ngx",
+  "version": "0.1.0",
+  "description": "Activepieces piece for paperless-ngx: upload, search, tag and react to documents in a self-hosted archive.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node scripts/bundle.mjs",
+    "bundle": "node scripts/bundle.mjs",
+    "test": "vitest run --silent=false",
+    "test:watch": "vitest",
+    "lint": "oxlint --type-aware --type-check",
+    "lint:fix": "oxlint --type-aware --type-check --fix",
+    "tsc": "tsc"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "activepieces",
+    "paperless-ngx",
+    "documents"
+  ],
+  "license": "AGPL-3.0-only",
+  "dependencies": {
+    "@activepieces/pieces-common": "0.12.5",
+    "@activepieces/pieces-framework": "0.32.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "esbuild": "0.25.12",
+    "oxlint": "1.70.0",
+    "oxlint-tsgolint": "0.23.0",
+    "typescript": "5.9.3",
+    "vitest": "4.1.1"
+  }
+}
