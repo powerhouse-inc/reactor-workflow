@@ -20,6 +20,7 @@ export interface MockDoclingOptions {
   syncSlow?: boolean;
   failJobs?: string[];
   backpressure?: number;
+  neverFinish?: boolean;
 }
 
 export interface MockDocling {
@@ -164,7 +165,7 @@ export async function startMockDocling(opts: MockDoclingOptions = {}): Promise<M
       const task = tasks.get(id);
       if (!task) return json(res, 404, { detail: "task not found" });
       pollCount++;
-      const done = task.polls >= 1 || task.failing;
+      const done = opts.neverFinish ? false : task.polls >= 1 || task.failing;
       task.polls++;
       if (!done) {
         return json(res, 200, {
