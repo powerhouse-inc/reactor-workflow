@@ -4,6 +4,7 @@ import { DoclingError } from "../errors.js";
 import { normalizeFile } from "../files.js";
 import { buildOptions, convertProps } from "../options.js";
 import { submitJob, type DoclingSource } from "../client.js";
+import { jobOutputFields } from "../output-schemas.js";
 
 export const submitJobAction = createAction({
   auth: doclingAuth,
@@ -17,6 +18,7 @@ export const submitJobAction = createAction({
       "Starts a background document conversion on docling-serve and returns a task id. Non-idempotent (each call starts a new job). Use with “Get Result” for long-running conversions.",
     idempotent: false,
   },
+  outputSchema: { fields: jobOutputFields },
   props: {
     file: Property.File({ displayName: "File", required: false, description: "Document to convert (leave one of file/url empty)." }),
     url: Property.ShortText({ displayName: "URL", required: false, description: "Document URL (leave one of file/url empty)." }),

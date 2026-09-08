@@ -4,6 +4,7 @@ import { DoclingError } from "../errors.js";
 import { normalizeFile } from "../files.js";
 import { buildOptions, convertProps, executionMode, timeoutMs } from "../options.js";
 import { runConversion } from "../client.js";
+import { convertOutputFields } from "../output-schemas.js";
 
 const fileProp = Property.File({
   displayName: "File",
@@ -23,6 +24,7 @@ export const convertFileAction = createAction({
       "Converts a document file to Markdown (or docling-document JSON / HTML / DocTags / plain text) using a docling-serve v1 service. Use for “parse/extract/read this document”. Text out; slow for very large documents (default deadline 10 minutes).",
     idempotent: true,
   },
+  outputSchema: { fields: convertOutputFields },
   props: { file: fileProp, ...convertProps },
   run: async (ctx) => {
     // 0.32.0 types the required File property value as `ApFile`, but this

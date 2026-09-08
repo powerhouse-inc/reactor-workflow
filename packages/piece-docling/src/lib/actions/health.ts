@@ -2,6 +2,7 @@ import { createAction } from "@activepieces/pieces-framework";
 import { httpClient, HttpMethod } from "@activepieces/pieces-common";
 import { doclingAuth, authFromCtx, authKeyHeaders } from "../auth.js";
 import { DoclingError } from "../errors.js";
+import { healthOutputFields } from "../output-schemas.js";
 
 export const healthAction = createAction({
   auth: doclingAuth,
@@ -14,6 +15,7 @@ export const healthAction = createAction({
     description: "Verifies the docling-serve endpoint is reachable and returns its component versions.",
     idempotent: true,
   },
+  outputSchema: { fields: healthOutputFields },
   props: {},
   run: async (ctx) => {
     const { baseUrl, apiKey } = authFromCtx(ctx);

@@ -3,6 +3,7 @@ import { doclingAuth, authFromCtx } from "../auth.js";
 import { DoclingError } from "../errors.js";
 import { buildOptions, convertProps, executionMode, timeoutMs } from "../options.js";
 import { runConversion } from "../client.js";
+import { convertOutputFields } from "../output-schemas.js";
 
 const urlProp = Property.ShortText({
   displayName: "URL",
@@ -22,6 +23,7 @@ export const convertUrlAction = createAction({
       "Converts a document at a public URL to Markdown (or other formats) via docling-serve. Use when the source is a link rather than an uploaded file.",
     idempotent: true,
   },
+  outputSchema: { fields: convertOutputFields },
   props: { url: urlProp, ...convertProps },
   run: async (ctx) => {
     const raw = ctx.propsValue.url;

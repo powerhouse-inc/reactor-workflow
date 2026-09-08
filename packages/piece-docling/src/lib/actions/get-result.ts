@@ -2,6 +2,7 @@ import { createAction, Property } from "@activepieces/pieces-framework";
 import { doclingAuth, authFromCtx } from "../auth.js";
 import { DoclingError } from "../errors.js";
 import { pollTask, fetchResult, type TaskStatusResponse } from "../client.js";
+import { getResultOutputFields } from "../output-schemas.js";
 
 export const getResultAction = createAction({
   auth: doclingAuth,
@@ -15,6 +16,7 @@ export const getResultAction = createAction({
       "Polls a docling-serve job by task id. Idempotent; safe to re-run (e.g. via a workflow retry) until the job finishes.",
     idempotent: true,
   },
+  outputSchema: { fields: getResultOutputFields },
   props: {
     task_id: Property.ShortText({ displayName: "Task ID", required: true, description: "The task_id returned by “Submit Job”." }),
     wait_seconds: Property.Number({ displayName: "Wait (seconds)", required: false, defaultValue: 0, description: "Long-poll wait on the server, 0–30." }),
