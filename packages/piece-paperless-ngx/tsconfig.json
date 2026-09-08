@@ -8,7 +8,10 @@
       "vitest/globals",
       "node"
     ],
-    "customConditions": []
+    "customConditions": [
+      "source"
+    ],
+    "allowImportingTsExtensions": true
   },
   "include": [
     "**/*"

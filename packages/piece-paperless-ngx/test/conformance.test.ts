@@ -20,9 +20,7 @@ const bundleFile = join(packageRoot, "dist", "index.js");
 type Connectors = typeof ReactorConnectors;
 let connectors: Connectors | undefined;
 try {
-  connectors = (await import(
-    "@powerhousedao/reactor-connectors"
-  )) as Connectors;
+  connectors = await import("@powerhousedao/reactor-connectors");
 } catch {
   connectors = undefined;
 }
