@@ -258,6 +258,23 @@ const SUPERVISED_KINDS = new Set(["piece", "schedule", PIECE_WEBHOOK_KIND]);
 // Shared so no refusal path can accidentally answer with a distinguishing body.
 const UNAUTHORIZED: WebhookReply = { status: 401 };
 
+const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
+
+// How long a sync-mode delivery holds the provider's socket. Beyond this the
+// run keeps going and the provider is told so: a wedged step must not be able
+// to tie up connections one delivery at a time.
+const DELIVERY_TIMEOUT_MS =
+  Number(process.env.WORKFLOW_WEBHOOK_TIMEOUT_MS) || 30_000;
+
+const TIMED_OUT = Symbol("webhook delivery timed out");
+
+/** Resolves to TIMED_OUT, and never keeps the process alive waiting to. */
+function timeout(ms: number): Promise<typeof TIMED_OUT> {
+  return new Promise((resolve) => {
+    setTimeout(() => resolve(TIMED_OUT), ms).unref();
+  });
+}
+
 /**
  * The trigger payload, shaped like Activepieces' catch-webhook contract so
  * authored expressions and adapted pieces agree on where a request's parts
@@ -459,7 +476,7 @@ export class WorkflowRuntimeService {
       });
       // Awaited: a delivery landing before the token exists would be refused,
       // and the piece registers this URL with the provider from onEnable.
-      await this.webhookEndpoints?.endpointFor(workflowId);
+      await (await this.endpoints())?.endpointFor(workflowId);
     }
     // Arming downloads a bundle and calls the provider; that stays off the
     // operation-ingestion path.
@@ -511,7 +528,7 @@ export class WorkflowRuntimeService {
       config,
     });
     // Awaited: a delivery landing before the token exists would be refused.
-    await this.webhookEndpoints?.endpointFor(workflowId);
+    await (await this.endpoints())?.endpointFor(workflowId);
   }
 
   // Triggers the supervisor drives on its tick: piece polls and schedules.
@@ -894,6 +911,10 @@ export class WorkflowRuntimeService {
   }
 
   private webhookEndpoints?: IWebhookEndpoints;
+  // Held as a promise, not just its result: `configure` starts seeding from the
+  // subgraph's constructor, which runs before `onSetup`, so a seeded webhook
+  // workflow would otherwise mint no token and fail to arm.
+  private webhookRegistration?: Promise<IWebhookEndpoints | undefined>;
 
   /**
    * Registers the workflow endpoint family with the reactor's webhook service.
@@ -908,11 +929,36 @@ export class WorkflowRuntimeService {
   async registerWebhookEndpoint(subgraph: BaseSubgraph): Promise<void> {
     // The scope is read here rather than passed in: the subgraph's own type
     // carries it, so there is one identity for it instead of two.
-    this.webhookEndpoints = await subgraph.http.webhooks.register({
-      name: "trigger",
-      policyFor: (workflowId) => this.webhookPolicy(workflowId),
-      onRequest: (request) => this.deliverWebhook(request),
-    });
+    this.webhookRegistration = subgraph.http.webhooks
+      .register({
+        name: "trigger",
+        policyFor: (workflowId) => this.webhookPolicy(workflowId),
+        onRequest: (request) => this.deliverWebhook(request),
+      })
+      .then((endpoints) => {
+        this.webhookEndpoints = endpoints;
+        return endpoints;
+      })
+      .catch((error: unknown) => {
+        // A host with no webhook store is a host without webhook triggers, not
+        // a host without workflows: document-event and schedule triggers, and
+        // every resolver, must survive this. Rethrowing would take the whole
+        // subgraph down with it, since the manager awaits onSetup.
+        logger.warn(
+          "Webhook triggers are unavailable on this host; other triggers are unaffected",
+          error,
+        );
+        return undefined;
+      });
+    await this.webhookRegistration;
+  }
+
+  /**
+   * The endpoint family, once registered. Seeding runs before `onSetup`, so a
+   * caller that needs a token has to wait for it rather than find it missing.
+   */
+  private async endpoints(): Promise<IWebhookEndpoints | undefined> {
+    return this.webhookEndpoints ?? (await this.webhookRegistration);
   }
 
   /**
@@ -961,7 +1007,7 @@ export class WorkflowRuntimeService {
     armed: boolean;
     createdAt: string;
   } | null> {
-    const endpoints = this.webhookEndpoints;
+    const endpoints = await this.endpoints();
     if (!endpoints) return null;
     const registration = this.registry.get(workflowId);
     const armed =
@@ -971,7 +1017,19 @@ export class WorkflowRuntimeService {
     // Minting only for an armed workflow: handing out an endpoint that refuses
     // every delivery would read as a broken integration. A disarmed workflow
     // still shows the URL it already had, so re-enabling keeps it.
-    if (armed) await endpoints.endpointFor(workflowId);
+    //
+    // `endpointFor` already answers with the URL, so the armed path never
+    // scans: listing every endpoint in the package to find one costs more with
+    // every workflow, and this is on the editor's query path.
+    if (armed) {
+      const minted = await endpoints.endpointFor(workflowId);
+      return {
+        workflowId,
+        url: minted.url,
+        armed,
+        createdAt: minted.createdAt,
+      };
+    }
     const existing = (await endpoints.list()).find(
       (entry) => entry.key === workflowId,
     );
@@ -1004,21 +1062,52 @@ export class WorkflowRuntimeService {
       this.fireFromTrigger(workflowId, payload, WEBHOOK_TRIGGER_KIND);
       return { status: config.responseStatus };
     }
-    try {
-      const run = await this.fire(workflowId, payload, WEBHOOK_TRIGGER_KIND);
+    // Sync mode holds the provider's socket, so the wait is bounded. On expiry
+    // the run is left going — cancelling it would lose work the provider has
+    // already been told about — and the provider gets a 504 it will retry,
+    // which the dedupe field is there to absorb.
+    const run = await Promise.race([
+      this.fire(workflowId, payload, WEBHOOK_TRIGGER_KIND).then(
+        (result) => ({ ok: true, result }) as const,
+        (error: unknown) => ({ ok: false, error }) as const,
+      ),
+      timeout(DELIVERY_TIMEOUT_MS),
+    ]);
+
+    if (run === TIMED_OUT) {
+      logger.warn(
+        `Webhook run for ${workflowId} exceeded ${DELIVERY_TIMEOUT_MS}ms; answering 504 while it continues`,
+      );
       return {
-        status: run.status === "SUCCEEDED" ? config.responseStatus : 500,
+        status: 504,
+        contentType: JSON_CONTENT_TYPE,
         body: JSON.stringify({
-          runId: run.runId,
-          status: run.status,
-          error: run.error ?? null,
+          status: "RUNNING",
+          error: "The run did not finish in time",
         }),
       };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.error(`Webhook run failed for ${workflowId}: ${message}`);
-      return { status: 500, body: JSON.stringify({ error: message }) };
     }
+
+    if (!run.ok) {
+      const message =
+        run.error instanceof Error ? run.error.message : String(run.error);
+      logger.error(`Webhook run failed for ${workflowId}: ${message}`);
+      return {
+        status: 500,
+        contentType: JSON_CONTENT_TYPE,
+        body: JSON.stringify({ error: message }),
+      };
+    }
+
+    return {
+      status: run.result.status === "SUCCEEDED" ? config.responseStatus : 500,
+      contentType: JSON_CONTENT_TYPE,
+      body: JSON.stringify({
+        runId: run.result.runId,
+        status: run.result.status,
+        error: run.result.error ?? null,
+      }),
+    };
   }
 
   // The piece owns verification and parsing, so there is no scheme to check

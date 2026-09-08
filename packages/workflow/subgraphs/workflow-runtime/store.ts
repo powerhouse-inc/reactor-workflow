@@ -137,6 +137,17 @@ async function up(db: IRelationalDb<WorkflowRuntimeDB>): Promise<void> {
     .addColumn("error", "text")
     .ifNotExists()
     .execute();
+
+  // The reactor's webhook service owns tokens now, in its own namespace, so
+  // this table is dead weight in any journal that ran the earlier branch.
+  // The tokens are not migrated: the earlier endpoint never reached main, so
+  // no provider has one registered, and minting a fresh one under the new
+  // path is the honest outcome rather than a silent half-migration.
+  try {
+    await db.schema.dropTable("webhook_endpoint").ifExists().execute();
+  } catch {
+    // Never blocks the journal: a leftover table costs nothing.
+  }
 }
 
 function jsonOrNull(value: unknown): string | null {

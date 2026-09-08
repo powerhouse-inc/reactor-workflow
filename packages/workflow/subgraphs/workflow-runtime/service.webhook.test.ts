@@ -109,6 +109,62 @@ describe("WorkflowRuntimeService webhooks", () => {
     );
   });
 
+  // ── registration ─────────────────────────────────────────────────────────
+
+  describe("registration", () => {
+    const subgraphWith = (webhooks: unknown) =>
+      ({
+        http: { webhooks },
+        reactorClient: { get: () => Promise.reject(new Error("not used")) },
+      }) as never;
+
+    it("survives a host that has no webhook store", async () => {
+      // Webhooks unavailable means no webhook triggers, not no workflows. The
+      // manager awaits onSetup, so rethrowing here would take the whole
+      // subgraph down — resolvers, document-event and schedule triggers with
+      // it.
+      await expect(
+        service.registerWebhookEndpoint(
+          subgraphWith({
+            register: () => Promise.reject(new Error("not available")),
+          }),
+        ),
+      ).resolves.toBeUndefined();
+
+      expect(await service.webhookEndpoint(WORKFLOW)).toBeNull();
+    });
+
+    it("lets a caller that needs a token wait for the registration", async () => {
+      // Seeding starts from the subgraph's constructor, before onSetup, so a
+      // webhook workflow restored at boot must not find the registry unset.
+      let settle: (value: unknown) => void = () => undefined;
+      const endpoints = {
+        endpointFor: vi.fn(() =>
+          Promise.resolve({
+            token: "t",
+            url: "https://host/webhooks/t",
+            createdAt: "2026-01-01T00:00:00.000Z",
+          }),
+        ),
+        revoke: vi.fn(),
+        list: vi.fn(() => Promise.resolve([])),
+      };
+
+      const registering = service.registerWebhookEndpoint(
+        subgraphWith({
+          register: () => new Promise((resolve) => (settle = resolve)),
+        }),
+      );
+      const asking = service.webhookEndpoint(WORKFLOW);
+
+      settle(endpoints);
+      await registering;
+      await asking;
+
+      expect(endpoints.list).toHaveBeenCalled();
+    });
+  });
+
   // ── the policy handed to the webhook service ─────────────────────────────
 
   describe("policy", () => {
@@ -236,6 +292,40 @@ describe("WorkflowRuntimeService webhooks", () => {
           status: "FAILED",
           error: "step blew up",
         });
+      });
+
+      it("labels the body as JSON", async () => {
+        // Core defaults an unlabelled body to text/plain, so a caller that
+        // dispatches on content type would stop parsing this.
+        await arm({ responseMode: "sync" });
+        const reply = await service.deliverWebhook(request());
+        expect(reply.contentType).toBe("application/json; charset=utf-8");
+      });
+
+      it("answers 504 without waiting for a wedged run", async () => {
+        // Sync mode holds the provider's socket. An unbounded wait lets a
+        // stuck step tie up connections one delivery at a time.
+        vi.useFakeTimers();
+        try {
+          await arm({ responseMode: "sync" });
+          vi.spyOn(service, "fire").mockReturnValue(
+            new Promise(() => {
+              /* never settles */
+            }) as never,
+          );
+
+          const pending = service.deliverWebhook(request());
+          await vi.advanceTimersByTimeAsync(30_000);
+          const reply = await pending;
+
+          expect(reply.status).toBe(504);
+          expect(JSON.parse(reply.body!)).toEqual({
+            status: "RUNNING",
+            error: "The run did not finish in time",
+          });
+        } finally {
+          vi.useRealTimers();
+        }
       });
 
       it("answers 500 when the run throws", async () => {
