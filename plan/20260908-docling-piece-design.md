@@ -1,6 +1,6 @@
 # Docling Connector — Activepieces Piece Design
 
-**Date:** 2026-09-08 · **Status:** Draft for review
+**Date:** 2026-09-08 · **Status:** Review pass applied 2026-09-08 (framework version split, auth-shape handling, outputSchema semantics; §12 answered below)
 **Reads with:** [`06-ap-red-compatible-architecture.md`](./06-ap-red-compatible-architecture.md) (the compatibility claims), [`08-workflow-automation-spec.md`](./08-workflow-automation-spec.md) (the connector contract), [`10-spike-notes-s6a.md`](../packages/reactor-connectors/10-spike-notes-s6a.md) / [`11-spike-notes-s6b.md`](../packages/reactor-connectors/11-spike-notes-s6b.md) (bundle/loading findings).
 
 ---
@@ -116,7 +116,22 @@ up to 7 days; Ray-engine queue rejection surfaces as 429/503 with `RedisBackpres
 - Stock images ship only layout + table-structure models; OCR/VLM/enrichment require
   `docling-tools models download` (no auto-download).
 
-### 2.2 Activepieces piece framework (2026, repo `main`)
+### 2.2 Activepieces piece framework — version status (verified 2026-09-08)
+
+**The version split — the load-bearing fact for this piece:**
+
+| | Version | Status |
+|---|---|---|
+| npm `latest` | **0.32.0** (published 2026-06-17; 0.30/0.31/0.32 shipped weekly in June) | the only current published line — **0.33–0.39 do not exist on npm** |
+| GitHub `main` | **0.39.0** | seven unpublished increments ahead; deps moved to `core-utils`/`core-piece-types` + `zod/mini` |
+
+The "2026 surface" below is **main-only**: `classification` on actions/triggers,
+`Property.File({ streaming: true })`/`ApStreamingFile`, and auth `getConnectionIdentifier` exist
+on main but in **no published version**. We build the piece against published **0.32.0**
+(reproducible npm dependency). The reactor's loader is version-agnostic — a piece bundle inlines
+its own framework copy, and the `Piece` constructor-name duck type holds on main too, so code
+written to the 0.32.0 surface compiles unmodified against main when the upstream PR targets it.
+The main-only surface is the v2 upgrade path (§10).
 
 The monorepo was restructured: pieces live under `packages/pieces/{core,community,custom}/` —
 **731 community pieces** — and the repo carries a `packages/pieces/CLAUDE.md` "Piece SDK" guide
@@ -127,17 +142,23 @@ The monorepo was restructured: pieces live under `packages/pieces/{core,communit
   `src/lib/common/`, `src/i18n/translation.json`. Reference example: `community/airtable`.
 - **Auth:** `PieceAuth.SecretText()`, `PieceAuth.OAuth2()`, `PieceAuth.CustomAuth({ props })` —
   all support `validate({ auth, server }) → { valid: true } | { valid: false, error }` (credential
-  check) and `getConnectionIdentifier({ auth, server }) → string | undefined` (the human-readable
-  connection label shown in the UI). `CustomAuth` props: short/long text, number, checkbox, static
-  dropdown, secret text. Runtime shape in `ctx.auth`: `{ type: "CUSTOM_AUTH", props: { … } }`.
-- **Actions (2026 surface):** `createAction({ name, auth?, displayName, description, props,
+  check) in both 0.32.0 and main; main adds `getConnectionIdentifier({ auth, server }) → string |
+  undefined` (the human-readable connection label shown in the UI) — **v2-only for us**.
+  `CustomAuth` props: short/long text, number, checkbox, static dropdown, secret text
+  (`PieceAuth.SecretText` factory — there is **no** `Property.SecretText` in either version; the
+  exported `SecretTextProperty` is a zod schema *value*, not a factory). 0.32.0 hands `validate`
+  the **flat** property value (`{ base_url, api_key }`) — the shaped `{ type, props }` object only
+  exists on runtime `ctx.auth`. Our `validate` reads the flat value (pure AP semantics); the
+  reactor path never calls it — the `checkConnection` shim reads the shaped `ctx.auth` itself (§4.3).
+- **Actions:** 0.32.0 `createAction({ name, auth?, displayName, description, props,
   propertyGroups?, run, test?, requireAuth?, errorHandlingOptions?, outputSchema?,
-  audience: 'human'|'ai'|'both', aiMetadata: { description?, idempotent? },
-  classification: 'READ'|'SEARCH'|'WRITE'|'DESTRUCTIVE' })`.
+  audience: 'human'|'ai'|'both', aiMetadata: { description?, idempotent? } })` — no
+  `classification` (main-only: `'READ'|'SEARCH'|'WRITE'|'DESTRUCTIVE'`) and no `i18n` param.
 - **Files:** `Property.File()` → `ApFile { filename, data: Buffer, extension? }` with a `.base64`
-  getter; `Property.File({ streaming: true })` → `ApStreamingFile { filename, body: Readable, … }`.
-  `ctx.files.write(Readable|Buffer)` for outputs; `httpClient` never retries stream/form-data
-  bodies.
+  getter (both versions). Main-only: `Property.File({ streaming: true })` →
+  `ApStreamingFile { filename, body: Readable, … }` (v2, §10). `ctx.files.write(Readable|Buffer)`
+  for outputs — **unused by us** (G2: throwing stub in the reactor); `httpClient` never retries
+  stream/form-data bodies.
 - **Categories:** `PieceCategory.CONTENT_AND_FILES` is the right bucket for docling.
 - **Bundling/publishing:** per-piece `build` (tsc) + `bundle` (CLI, inlines framework + deps into a
   self-contained npm tarball — the format the reactor loads, see spike S6a). Three distribution
@@ -184,11 +205,11 @@ The monorepo was restructured: pieces live under `packages/pieces/{core,communit
 | D3 | **File transport (v1)** | `Property.File` input → piece-side base64 → **JSON** `POST /v1/convert/source` with `{kind:"file"}` | One code path for file/url/base64 inputs; no multipart; survives G3; no `ctx.files` (G2). Cost: +33 % body size — irrelevant for document sizes. Multipart + `ApStreamingFile` is the v2 optimization when page-image/binary output lands. |
 | D4 | **Execution model** | Default **async internally**: submit → long-poll (`?wait=`) → fetch result, with a user `timeoutSeconds` (default 600). Explicit `sync` mode for fast servers. | The 120 s sync cap (504) would otherwise turn medium documents into confusing failures; async is the shape docling-serve recommends for production. |
 | D5 | **Action set (v1)** | `convert_file`, `convert_url`, `submit_job`, `get_result`, `chunk`, `health` (6 actions, 0 triggers) | Each action maps 1:1 to an endpoint family; unambiguous required props per action (easier for humans *and* the AI assistant). `submit_job`/`get_result` enable workflows that span runs (task id persisted between steps/runs; the reactor's retry-with-backoff can re-poll). |
-| D6 | **Auth** | `PieceAuth.CustomAuth({ props: { base_url (ShortText, required, default `http://localhost:5001`), api_key (SecretText, optional) } })` + `validate` → `GET /health` + `getConnectionIdentifier` → `GET /version` | Matches the reactor's `CUSTOM_AUTH` shaping exactly (gotify test precedent). Optional key keeps local dev frictionless; `validate`/`getConnectionIdentifier` feed both AP's UI and our connection document's `status`/`accountLabel`. |
+| D6 | **Auth** | `PieceAuth.CustomAuth({ props: { base_url (ShortText, required, default `http://localhost:5001`), api_key (SecretText, optional) } })` + `validate` → `GET /health`; connection label from the `checkConnection` shim's `GET /version` (`auth.getConnectionIdentifier` is main-only, v2) | Matches the reactor's `CUSTOM_AUTH` shaping exactly (gotify test precedent). Optional key keeps local dev frictionless; `validate` feeds AP's UI, the shim feeds our connection document's `status`/`accountLabel`. |
 | D7 | **Triggers** | None in v1 | docling-serve emits no events. v2 candidates (job-completion polling trigger; webhook via the request's `callbacks[]` field pointed at our inbound-webhook bridge) are documented, not built. |
 | D8 | **Bundle** | Own esbuild config: CJS, `keepNames`, `platform: node`, `target: node20`, fully inlined (no externals) — the exact properties spike S6a measured | Acceptance is behavioral: the bundle must pass the existing Tier-1 conformance suite (load → descriptor → worker run) and produce a `metadata()` matching the cloud API's detail shape. We do not fork their monorepo to build. |
 | D9 | **Output discipline** | `to_formats` defaults to `["md"]`; `json` opt-in | The docling-document JSON is large; defaulting to Markdown keeps run journals small (doc 08 risk #3). |
-| D10 | **AI metadata** | `convert_*`/`chunk`/`get_result`/`health`: `classification: 'READ'`, `audience: 'both'`, `aiMetadata.idempotent: true` (except `submit_job`: `'WRITE'`, `idempotent: false`) | The 2026 framework surface exists precisely for AI-assistant selection; `submit_job` creates server-side state. |
+| D10 | **AI metadata** | `convert_*`/`chunk`/`get_result`/`health`: `audience: 'both'`, `aiMetadata.idempotent: true` (except `submit_job`: `aiMetadata.idempotent: false`); `classification` (READ/WRITE) is main-only → v2/upstream | `audience`/`aiMetadata` exist in 0.32.0 and are the AI-assistant selection surface; `submit_job` creates server-side state. |
 
 ## 4. The piece
 
@@ -208,13 +229,17 @@ export const doclingAuth = PieceAuth.CustomAuth({
       defaultValue: 'http://localhost:5001',
       description: 'docling-serve base URL (self-hosted) or the Docling-for-IBM-watsonx service URL.',
     }),
-    api_key: Property.SecretText({
+    api_key: PieceAuth.SecretText({
       displayName: 'API Key', required: false,
       description: 'The server’s DOCLING_SERVE_API_KEY, sent as X-Api-Key. Leave empty for an unauthenticated local server.',
     }),
   },
-  validate: async ({ auth }) => { /* GET {base_url}/health; 401 → invalid key; unreachable/5xx → server error */ },
-  getConnectionIdentifier: async ({ auth }) => { /* GET /version → "docling-serve v1.32.0" */ },
+  // 0.32.0's AP runtime calls validate with the FLAT property value
+  // ({base_url, api_key}) — validate reads it flat (pure AP semantics). The
+  // reactor never calls validate: its checkConnection shim (§4.3) performs
+  // its own /health with a shape-agnostic auth reader (authFromCtx).
+  validate: async ({ auth }) => { /* GET `${auth.base_url}/health`; 401 → invalid key; unreachable/5xx → server error */ },
+  // v2 (main 0.39.0): getConnectionIdentifier: GET /version → "docling-serve v1.32.0".
 });
 ```
 
@@ -233,7 +258,7 @@ Shared options block (`src/lib/common/options.ts`) across `convert_file`, `conve
 | `table_mode` | STATIC_DROPDOWN: `fast` / `accurate` | `accurate` | `options.table_mode` |
 | `page_range` | OBJECT (optional `[start, end]`, 1-based) | — | `options.page_range` |
 | `image_mode` | STATIC_DROPDOWN: `placeholder` / `embedded` / `referenced` | `placeholder` | `options.image_export_mode` |
-| `mode` | STATIC_DROPDOWN: `auto (async)` / `sync` | `auto` | sync vs async path (§5.1) |
+| `execution` | STATIC_DROPDOWN: `auto (async)` / `sync` | `auto` | sync vs async path (§5.1) |
 | `timeout_seconds` | NUMBER | `600` | async polling deadline |
 
 - **`convert_file`** (`READ`, idempotent): `file` (`Property.File`, required) + options.
@@ -255,29 +280,39 @@ Shared options block (`src/lib/common/options.ts`) across `convert_file`, `conve
 - **`health`** (`READ`, idempotent): no props. `GET /health` + `/version` →
   `{ status, version }`. Usable standalone (e.g. a pre-flight step) and reused by `validate`.
 
-**Output schema:** every action gets a zod `outputSchema` (2026 convention) mirroring
-§2.1's response shape, so the editor's output picker and the AI assistant see typed fields.
+**Output schema:** every action gets an `outputSchema` **field list** — `{ fields: [{ key,
+label?, description? }], itemLabel? }` — a UI descriptor (identical in 0.32.0 and main; it is
+*not* a validator) mirroring §2.1's response shape, so the editor's output picker and the AI
+assistant see typed fields. Optional internal validation of the response (e.g. rejecting the
+unexpected zip payload) lives in the client core, not on the action.
 
 **Errors (mapped in the client core, §5):** 401 → "invalid or missing API key (server
 `DOCLING_SERVE_API_KEY` mismatch)"; 422 → the server's detail (bad option/source); 504 (sync) →
-"conversion exceeded the server's sync limit — re-run with `mode: auto (async)`"; 429/503
+"conversion exceeded the server's sync limit — re-run with `execution: auto (async)`"; 429/503
 backpressure → retryable; `TaskFailureResult` → `failure.category`-typed, `retryable` honored.
 
 ### 4.3 `checkConnection` shim (gap G1)
 
 ```ts
 const piece = createPiece({ … });
-piece.checkConnection = async (ctx) => {          // the reactor subgraph's contract
-  const res = await doclingAuth.validate({ auth: ctx.auth, server: MINIMAL_SERVER });
-  if (!res.valid) throw new Error(res.error);
-  return { name: await doclingAuth.getConnectionIdentifier({ auth: ctx.auth, server: MINIMAL_SERVER }) };
+// The reactor subgraph's contract — pre-dates the 2026 auth.validate
+// convention; the secret-resolved SHAPED auth arrives in ctx.auth.
+piece.checkConnection = async (ctx) => {
+  const { baseUrl, apiKey } = authFromCtx(ctx);  // shape-agnostic (props ?? flat)
+  // GET /health — 401 → throw "API key rejected"; unreachable/5xx → throw.
+  // 0.32.0 has no auth.getConnectionIdentifier — the shim derives the label
+  // itself: GET /version → "docling-serve v1.32.0" (1.32.0's keys are
+  // hyphenated: body["docling-serve"], with a docling_serve fallback for
+  // older builds). Harmless under real Activepieces — AP never calls
+  // checkConnection.
 };
 ```
 
-`MINIMAL_SERVER` is the empty context the subgraph's fixture suite shows is sufficient (validate
-and the identifier only hit `ctx.auth`). This keeps the subgraph unmodified for v1; a follow-up
-should teach the subgraph to call `auth.validate` directly when `checkConnection` is absent, so
-*all* 2026-framework pieces get health checks (separate, small change — noted, not included).
+The shim does its HTTP with the framework's `httpClient` directly (no `server` context
+member is involved), so the subgraph stays unmodified for v1. A follow-up should
+teach the subgraph to call `auth.validate` directly when `checkConnection` is
+absent, so *all* pieces on the 2026 framework surface get health checks
+(separate, small change — noted, not included).
 
 ## 5. Piece internals
 
@@ -299,8 +334,9 @@ packages/piece-docling/
 │   ├── mock-docling-serve.ts     # node:http: /health /version /v1/convert/source[/async]
 │   │                             #   /v1/status/poll /v1/result /v1/chunk/… + 401/422/504/503/failure
 │   └── …                         # suites per §7
-└── package.json                  # deps: @activepieces/pieces-framework, @activepieces/pieces-common,
-                                  #   @activepieces/core-piece-types, @activepieces/core-utils (published npm versions)
+└── package.json                  # deps (published npm): @activepieces/pieces-framework@0.32.0,
+                                  #   @activepieces/pieces-common@0.12.5, @activepieces/shared@0.95.1
+                                  #   (main's core-*/zod-mini split is unpublished — v2, §10)
 ```
 
 ### 5.1 The async loop
@@ -331,7 +367,7 @@ The three shapes are the only ones reachable from the two runtimes (AP file pick
 reactor ⇒ JSON-IPC plain object; our own hydration ⇒ base64 string). One helper, unit-tested
 against all three.
 
-## 6. Reactor integration (host-side changes)
+## 6. Reactor integration
 
 1. **Catalog (gap G4):** `subgraphs/workflow-runtime/piece-catalog.ts` — merge a
    `FIRST_PARTY_PIECES` summary list (`@powerhousedao/piece-docling`, data-URI logo, version,
@@ -342,10 +378,12 @@ against all three.
 2. **checkConnection:** no subgraph change in v1 — the piece's shim (§4.3) satisfies the existing
    `piece.checkConnection(ctx)` call. The fixture suite gains a `docling` case (validate success /
    401 / unreachable → status OK / ERROR / ERROR with `accountLabel` populated).
-3. **File hydration (gap G3, host side):** in the `ActivepiecesBlockExecutor` path, when a step
-   config value for a `FILE`-typed prop is a data URI or attachment reference, hydrate it to
-   `{ filename, data: <base64 string>, extension }` before the IPC message. ~50 lines; the piece's
-   normalizer (§5.2) absorbs whatever shape arrives.
+3. **File values (gap G3): no host-side change needed.** The worker entry already hydrates
+   every `FILE`-typed prop before the action runs — `handleRun`/`handleTriggerHook`
+   (`worker/entry.ts:148/:183`) run values through `normalizePropsValue`
+   (`context/normalize.ts`), whose `toApFile` turns data URIs, http(s) URLs, and file-shaped
+   objects into full `ApFile { filename, data: Buffer, base64, extension }`. The piece-side
+   normalizer (§5.2) stays as defense-in-depth for any non-worker caller.
 4. **No changes to:** `fetch.ts` (any npm name+version already resolves), loader, descriptor,
    worker, auth shaping, secret store.
 
@@ -367,7 +405,8 @@ existing `bundle-cache.ts` pattern already handles):
 5. **File normalizer:** the three input shapes from §5.2.
 6. **Async loop:** deadline expiry → typed error; `partial_success` surfaced with per-page
    `errors[]`; poll `wait` parameter actually sent.
-7. **Output schemas:** zod `outputSchema` validates the mock responses (and rejects a zip).
+7. **Output schemas:** the attached `outputSchema` field lists match the mock responses'
+   shapes; the internal validator rejects the unexpected zip payload.
 8. **Live e2e (manual, not CI):** `docker run ghcr.io/docling-project/docling-serve-cpu` + a 2-page
    PDF through the studio workflow editor; confirm Markdown output renders in the run journal.
 
@@ -389,14 +428,19 @@ existing `bundle-cache.ts` pattern already handles):
 
 | Phase | Deliverable | Exit criteria |
 |---|---|---|
-| **P0** Scaffold + connection | package skeleton, `doclingAuth` (+`validate`/`getConnectionIdentifier`), `health` action, bundle script, conformance suite | the reactor loads the bundle, descriptor builds, `health` runs through the worker; `checkConnection` fixture passes |
+| **P0** Scaffold + connection | package skeleton, `doclingAuth` (+`validate`; `getConnectionIdentifier` is main-only, v2), `health` action, bundle script, conformance suite | the reactor loads the bundle, descriptor builds, `health` runs through the worker; `checkConnection` fixture passes |
 | **P1** Conversion core | client core (async loop, error mapping, options builder), `convert_file`, `convert_url`, `submit_job`, `get_result`, mock docling-serve, full worker/auth/async test suites | all §7.1–6 suites green; a real docling-serve (CPU docker) converts a PDF end-to-end through the studio |
-| **P2** Chunking + polish | `chunk` action, format presets, i18n, output schemas, logo, description | §7.5–7 green; editor shows the piece with correct metadata |
-| **P3** Publish + catalog | npm publish, first-party catalog merge, file hydration in the executor | a workflow with a `FILE` step input runs unmodified in the reactor; AI `getConnectors` lists Docling |
+| **P2** Chunking + polish | `chunk` action, format presets, i18n, output field descriptors, logo, description | §7.5–7 green; editor shows the piece with correct metadata |
+| **P3** Publish + catalog | npm publish, first-party catalog merge; E2E verifies the worker-side file hydration (already in `normalize.ts` — no host change) | a workflow with a `FILE` step input runs unmodified in the reactor; AI `getConnectors` lists Docling |
 | **P4** Upstream | PR to AP community dir, watsonx smoke test (their service URL + key, read-only health/convert) | PR merged ⇒ cloud catalog lists `@activepieces/piece-docling`; first-party entry deduped |
 
 ## 10. v2 backlog (explicitly not built)
 
+- **Framework upgrade (0.33+/main 0.39.0):** when AP resumes npm publishing, re-target the
+  piece to gain `classification` (READ/WRITE labels for the AI assistant), auth
+  `getConnectionIdentifier` (the shim's `/version` call moves into the framework), and
+  `Property.File({ streaming: true })`/multipart; the 0.32.0 surface is a strict subset, so
+  the port is additive.
 - **Triggers:** (a) polling trigger "job completed" (user supplies `task_id`; piece polls and emits
   with `_dedupe_key = task_id` — dedup contract from spike S6b); (b) webhook trigger fed by
   docling-serve's request-level `callbacks[]` pointed at our inbound-webhook bridge (doc 08 §7
@@ -431,6 +475,18 @@ existing `bundle-cache.ts` pattern already handles):
 3. **watsonx** — is a managed Docling-for-IBM-watsonx deployment part of your intended usage
    (it's free with D6, but P4's smoke test only makes sense if yes)?
 
+**Reviewer answers (2026-09-08):**
+1. **Keep `@powerhousedao/piece-docling`.** The scope is already the workspace's publishing
+   scope (`reactor-connectors`, `workflow`, …); a different scope buys nothing, and the
+   upstream twin uses `@activepieces/` regardless.
+2. **Keep `chunk` in v1 (P2).** It reuses the client core + file + options almost entirely
+   (only the endpoint path and the `chunker` prop differ), so it costs one isolated task
+   (plan Task 12) and does not bloat P1. If the thinnest possible v1 is preferred, it is the
+   one clean thing to defer to v1.1 — the plan keeps it isolated in P2 for exactly that reason.
+3. **Optional P4 smoke step.** Watsonx is the same API via `base_url` (free with D6): if you
+   have a service URL + key, run a read-only `health` plus one small conversion against it;
+   otherwise skip — nothing in v1 depends on it.
+
 ## 13. Sources
 
 - docling-serve repo (`docling-project/docling-serve` @ v1.32.0): `app.py` (routes), `auth.py`
@@ -449,6 +505,10 @@ existing `bundle-cache.ts` pattern already handles):
   `docs/build-pieces/sharing-pieces/{community,contribute,private}.md`
 - Activepieces cloud catalog: `https://cloud.activepieces.com/api/v1/pieces` (764 pieces, no
   docling — checked 2026-09-08)
+- npm registry (2026-09-08): `@activepieces/pieces-framework` latest = **0.32.0**
+  (2026-06-17; 0.33–0.39 unpublished); `@activepieces/pieces-common` latest = 0.12.5;
+  `@activepieces/shared` latest = 0.96.2 (0.32.0's own dependency: 0.95.1). 0.32.0's `.d.ts`
+  verified from the published npm tarball.
 - This repo: spike notes S6a/S6b, `src/activepieces/*`, `src/engine/connections.ts`,
   `subgraphs/workflow-runtime/{piece-catalog,check-connection.test,service}.ts`,
   `editors/workflow-editor-ap/shims/ap-runtime.ts` (`POWERHOUSE_PIECE`),
