@@ -88,3 +88,41 @@ export async function waitFor<T>(
     await new Promise((resolve) => setTimeout(resolve, everyMs));
   }
 }
+
+export interface TriggerRunOptions {
+  auth?: unknown;
+  props?: Record<string, unknown>;
+  store?: MemoryStore;
+  webhookUrl?: string;
+  payload?: unknown;
+}
+
+type TriggerHook = "onEnable" | "onDisable" | "run" | "test";
+
+// The trigger context members these hooks read. The supervisor supplies the
+// same shape, with webhookUrl carrying the delivery token in its fragment.
+export function triggerContext(options: TriggerRunOptions = {}) {
+  return {
+    auth: options.auth,
+    propsValue: options.props ?? {},
+    store: options.store ?? new MemoryStore(),
+    webhookUrl: options.webhookUrl,
+    payload: options.payload,
+    files: new RecordingFiles(),
+  };
+}
+
+// The framework's ITrigger is a union whose hooks are typed per strategy, and
+// several of those parameter types are unrelated to the context we build here.
+// The cast keeps the helper usable for every strategy.
+export function runHook(
+  trigger: unknown,
+  hook: TriggerHook,
+  options: TriggerRunOptions = {},
+): Promise<unknown> {
+  const hooks = trigger as Record<
+    TriggerHook,
+    (context: unknown) => Promise<unknown>
+  >;
+  return hooks[hook](triggerContext(options));
+}

@@ -11,6 +11,10 @@ import { searchDocuments } from "./lib/actions/search-documents";
 import { updateDocument } from "./lib/actions/update-document";
 import { uploadDocument } from "./lib/actions/upload-document";
 import { PAPERLESS_LOGO } from "./lib/logo";
+import {
+  documentUpdated,
+  newDocument,
+} from "./lib/triggers/document-trigger";
 
 export const paperlessNgx = createPiece({
   displayName: "Paperless-ngx",
@@ -32,7 +36,7 @@ export const paperlessNgx = createPiece({
     getTask,
     customApiCall,
   ],
-  triggers: [],
+  triggers: [newDocument, documentUpdated],
 });
 
 // The reactor's checkConnection mutation calls `piece.checkConnection(ctx)` if
