@@ -1,15 +1,14 @@
-// Delivery path for core#webhook: token lookup, verification, dedup and the
-// two response modes. The HTTP transport itself is covered by webhook-router.
+// What is left of the webhook path once the reactor's webhook service owns the
+// transport: the policy this service hands over for one workflow, and what a
+// verified delivery means. Token lookup, signature schemes, dedupe, the
+// challenge round, redaction and rate limiting are covered by reactor-api.
+import type { WebhookRequest } from "@powerhousedao/reactor-api";
 import type { OperationWithContext } from "document-model";
-import { createHmac } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkflowRuntimeService } from "./service.js";
-import type { WebhookEndpointRow, WorkflowRunStore } from "./store.js";
-import type { WebhookRequest } from "./webhook-router.js";
 
 const WORKFLOW_TYPE = "powerhouse/workflow";
 const WORKFLOW = "wf-hook";
-const TOKEN = "0123456789abcdef0123456789abcdef";
 const SECRET_REF = "secret://v1:00112233445566778899aabbccddeeff";
 const SECRET = "s3cret";
 
@@ -35,58 +34,19 @@ function workflowOp(state: Record<string, unknown>): OperationWithContext {
 }
 
 const request = (overrides: Partial<WebhookRequest> = {}): WebhookRequest => ({
-  token: TOKEN,
+  key: WORKFLOW,
   method: "POST",
-  path: `/workflows/hooks/${TOKEN}`,
+  path: "/webhooks/0123456789abcdef0123456789abcdef",
   queryParams: {},
   headers: { "content-type": "application/json" },
   raw: Buffer.from('{"id":"evt_1"}', "utf8"),
-  rawExact: true,
+  body: { id: "evt_1" },
   ...overrides,
 });
 
-describe("WorkflowRuntimeService.deliverWebhook", () => {
+describe("WorkflowRuntimeService webhooks", () => {
   let service: WorkflowRuntimeService;
   let fired: { workflowId: string; payload: unknown; kind: string }[];
-  let claimed: Set<string>;
-  let endpoints: Map<string, WebhookEndpointRow>;
-
-  function useStore(): void {
-    endpoints = new Map([
-      [
-        TOKEN,
-        {
-          token: TOKEN,
-          workflow_id: WORKFLOW,
-          block_type: "core#webhook",
-          created_at: "2026-09-07T00:00:00.000Z",
-        },
-      ],
-    ]);
-    claimed = new Set();
-    const store = {
-      getWebhookEndpoint: (token: string) =>
-        Promise.resolve(endpoints.get(token)),
-      getWebhookEndpointForWorkflow: (workflowId: string) =>
-        Promise.resolve(
-          [...endpoints.values()].find((row) => row.workflow_id === workflowId),
-        ),
-      ensureWebhookEndpoint: (workflowId: string) =>
-        Promise.resolve(
-          [...endpoints.values()].find(
-            (row) => row.workflow_id === workflowId,
-          )!,
-        ),
-      claimDedupe: (workflowId: string, key: string) => {
-        const composite = `${workflowId}:${key}`;
-        if (claimed.has(composite)) return Promise.resolve(false);
-        claimed.add(composite);
-        return Promise.resolve(true);
-      },
-    };
-    (service as unknown as { storePromise: unknown }).storePromise =
-      Promise.resolve(store as unknown as WorkflowRunStore);
-  }
 
   async function arm(config: Record<string, unknown>): Promise<void> {
     await service.onOperations([
@@ -117,6 +77,13 @@ describe("WorkflowRuntimeService.deliverWebhook", () => {
     ]);
   }
 
+  const policy = () =>
+    (
+      service as unknown as {
+        webhookPolicy: (id: string) => Promise<unknown>;
+      }
+    ).webhookPolicy(WORKFLOW);
+
   beforeEach(() => {
     service = new WorkflowRuntimeService();
     fired = [];
@@ -140,359 +107,150 @@ describe("WorkflowRuntimeService.deliverWebhook", () => {
         } as never);
       },
     );
-    useStore();
   });
 
-  it("accepts an unsigned delivery and fires with the request payload", async () => {
-    await arm({});
-    const reply = await service.deliverWebhook(
-      request({ queryParams: { source: "github" } }),
-    );
+  // ── the policy handed to the webhook service ─────────────────────────────
 
-    expect(reply).toEqual({ status: 202 });
-    expect(fired).toEqual([
-      {
-        workflowId: WORKFLOW,
-        kind: "webhook",
-        payload: {
-          method: "POST",
-          path: `/workflows/hooks/${TOKEN}`,
-          headers: { "content-type": "application/json" },
-          queryParams: { source: "github" },
-          body: { id: "evt_1" },
+  describe("policy", () => {
+    it("is absent for a workflow that is not armed", async () => {
+      // The service answers this exactly as it answers an unknown token, so a
+      // prober cannot tell a disabled workflow from one that never existed.
+      expect(await policy()).toBeUndefined();
+      await arm({});
+      expect(await policy()).toBeDefined();
+      await disarm();
+      expect(await policy()).toBeUndefined();
+    });
+
+    it("is absent when the trigger config does not parse", async () => {
+      // A signed scheme with no secret ref cannot be honoured, so the endpoint
+      // must not be armed at all.
+      await arm({ scheme: "github" });
+      expect(await policy()).toBeUndefined();
+    });
+
+    it("declares no verification for an unsigned endpoint", async () => {
+      await arm({});
+      expect(await policy()).toMatchObject({ verify: undefined });
+    });
+
+    it("resolves the signing secret through the secret store", async () => {
+      await arm({ scheme: "hmac-sha256", secretRef: SECRET_REF });
+      expect(await policy()).toMatchObject({
+        verify: {
+          scheme: "hmac-sha256",
+          header: "x-signature",
+          secret: SECRET,
         },
-      },
-    ]);
-  });
-
-  it("answers a bare 401 for an unknown token", async () => {
-    await arm({});
-    const reply = await service.deliverWebhook(
-      request({ token: "f".repeat(32) }),
-    );
-    expect(reply).toEqual({ status: 401 });
-    expect(fired).toHaveLength(0);
-  });
-
-  it("answers the same 401 once the workflow is disabled", async () => {
-    await arm({});
-    await disarm();
-    expect(await service.deliverWebhook(request())).toEqual({ status: 401 });
-    expect(fired).toHaveLength(0);
-  });
-
-  it("refuses a workflow whose webhook config does not parse", async () => {
-    await arm({ scheme: "github" });
-    expect(await service.deliverWebhook(request())).toEqual({ status: 401 });
-    expect(fired).toHaveLength(0);
-  });
-
-  it("rejects a method the trigger does not accept", async () => {
-    await arm({ methods: "POST" });
-    const reply = await service.deliverWebhook(request({ method: "GET" }));
-    expect(reply).toEqual({ status: 405 });
-    expect(fired).toHaveLength(0);
-  });
-
-  describe("signed endpoints", () => {
-    const body = '{"id":"evt_1"}';
-    const signature = createHmac("sha256", SECRET).update(body).digest("hex");
-
-    it("fires on a matching HMAC and redacts the signature header", async () => {
-      await arm({ scheme: "hmac-sha256", secretRef: SECRET_REF });
-      const reply = await service.deliverWebhook(
-        request({
-          headers: {
-            "content-type": "application/json",
-            "x-signature": signature,
-          },
-        }),
-      );
-
-      expect(reply).toEqual({ status: 202 });
-      expect(fired).toHaveLength(1);
-      const payload = fired[0].payload as { headers: Record<string, string> };
-      expect(payload.headers["x-signature"]).toBe("[redacted]");
+      });
     });
 
-    it("rejects a body that no longer matches its signature", async () => {
-      await arm({ scheme: "hmac-sha256", secretRef: SECRET_REF });
-      const reply = await service.deliverWebhook(
-        request({
-          headers: {
-            "content-type": "application/json",
-            "x-signature": signature,
-          },
-          raw: Buffer.from('{"id":"evt_2"}', "utf8"),
-        }),
-      );
-      expect(reply).toEqual({ status: 401 });
-      expect(fired).toHaveLength(0);
-    });
-
-    it("rejects when the secret has been deleted", async () => {
+    it("declares a deleted secret as absent rather than failing", async () => {
+      // The webhook service refuses a signed endpoint with no secret, which is
+      // the same answer as a bad signature.
       await arm({
         scheme: "hmac-sha256",
         secretRef: "secret://v1:ffffffffffffffffffffffffffffffff",
       });
-      const reply = await service.deliverWebhook(
-        request({
-          headers: {
-            "content-type": "application/json",
-            "x-signature": signature,
-          },
-        }),
-      );
-      expect(reply).toEqual({ status: 401 });
-      expect(fired).toHaveLength(0);
-    });
-
-    it("refuses rather than verify a re-encoded body", async () => {
-      await arm({ scheme: "hmac-sha256", secretRef: SECRET_REF });
-      const reply = await service.deliverWebhook(
-        request({
-          headers: {
-            "content-type": "application/json",
-            "x-signature": signature,
-          },
-          rawExact: false,
-        }),
-      );
-      expect(reply).toEqual({ status: 503 });
-      expect(fired).toHaveLength(0);
-    });
-  });
-
-  it("echoes a challenge instead of starting a run", async () => {
-    await arm({ challengeField: "challenge" });
-    const reply = await service.deliverWebhook(
-      request({ raw: Buffer.from('{"challenge":"abc"}', "utf8") }),
-    );
-    expect(reply).toEqual({
-      status: 200,
-      body: "abc",
-      contentType: "text/plain; charset=utf-8",
-    });
-    expect(fired).toHaveLength(0);
-  });
-
-  it("accepts a redelivery once and answers the second as success", async () => {
-    await arm({ dedupeField: "id" });
-    expect(await service.deliverWebhook(request())).toEqual({ status: 202 });
-    expect(await service.deliverWebhook(request())).toEqual({ status: 202 });
-    expect(fired).toHaveLength(1);
-  });
-
-  it("still fires twice when no event-id field is configured", async () => {
-    await arm({});
-    await service.deliverWebhook(request());
-    await service.deliverWebhook(request());
-    expect(fired).toHaveLength(2);
-  });
-
-  describe("sync mode", () => {
-    it("reports the run outcome in the body", async () => {
-      await arm({ responseMode: "sync" });
-      const reply = await service.deliverWebhook(request());
-      expect(reply.status).toBe(200);
-      expect(JSON.parse(reply.body!)).toEqual({
-        runId: "run-1",
-        status: "SUCCEEDED",
-        error: null,
+      expect(await policy()).toMatchObject({
+        verify: { scheme: "hmac-sha256", secret: undefined },
       });
     });
 
-    it("answers 500 for a failed run", async () => {
-      await arm({ responseMode: "sync" });
-      vi.spyOn(service, "fire").mockResolvedValue({
-        runId: "run-2",
-        status: "FAILED",
-        error: "step blew up",
-        steps: [],
-      } as never);
-      const reply = await service.deliverWebhook(request());
-      expect(reply.status).toBe(500);
-      expect(JSON.parse(reply.body!)).toEqual({
-        runId: "run-2",
-        status: "FAILED",
-        error: "step blew up",
+    it("passes the author's methods, dedupe field and challenge field", async () => {
+      await arm({
+        methods: "POST",
+        dedupeField: "id",
+        dedupeTtlSeconds: 60,
+        challengeField: "challenge",
+      });
+      expect(await policy()).toMatchObject({
+        methods: ["POST"],
+        dedupe: { field: "id", ttlSeconds: 60 },
+        challengeField: "challenge",
       });
     });
 
-    it("answers 500 when the run throws", async () => {
-      await arm({ responseMode: "sync" });
-      vi.spyOn(service, "fire").mockRejectedValue(new Error("no such step"));
+    it("declares no dedupe when the author named no field", async () => {
+      await arm({});
+      expect(await policy()).toMatchObject({ dedupe: undefined });
+    });
+  });
+
+  // ── what a verified delivery means ───────────────────────────────────────
+
+  describe("delivery", () => {
+    it("fires with the request as the trigger payload", async () => {
+      await arm({});
+      const reply = await service.deliverWebhook(
+        request({ queryParams: { source: "github" } }),
+      );
+
+      expect(reply).toEqual({ status: 202 });
+      expect(fired).toEqual([
+        {
+          workflowId: WORKFLOW,
+          kind: "webhook",
+          payload: {
+            method: "POST",
+            path: "/webhooks/0123456789abcdef0123456789abcdef",
+            headers: { "content-type": "application/json" },
+            queryParams: { source: "github" },
+            body: { id: "evt_1" },
+          },
+        },
+      ]);
+    });
+
+    it("refuses a delivery for a workflow that is no longer armed", async () => {
+      await arm({});
+      await disarm();
+      expect(await service.deliverWebhook(request())).toEqual({ status: 401 });
+      expect(fired).toHaveLength(0);
+    });
+
+    describe("sync mode", () => {
+      it("reports the run outcome in the body", async () => {
+        await arm({ responseMode: "sync" });
+        const reply = await service.deliverWebhook(request());
+        expect(reply.status).toBe(200);
+        expect(JSON.parse(reply.body!)).toEqual({
+          runId: "run-1",
+          status: "SUCCEEDED",
+          error: null,
+        });
+      });
+
+      it("answers 500 for a failed run", async () => {
+        await arm({ responseMode: "sync" });
+        vi.spyOn(service, "fire").mockResolvedValue({
+          runId: "run-2",
+          status: "FAILED",
+          error: "step blew up",
+          steps: [],
+        } as never);
+        const reply = await service.deliverWebhook(request());
+        expect(reply.status).toBe(500);
+        expect(JSON.parse(reply.body!)).toEqual({
+          runId: "run-2",
+          status: "FAILED",
+          error: "step blew up",
+        });
+      });
+
+      it("answers 500 when the run throws", async () => {
+        await arm({ responseMode: "sync" });
+        vi.spyOn(service, "fire").mockRejectedValue(new Error("no such step"));
+        const reply = await service.deliverWebhook(request());
+        expect(reply.status).toBe(500);
+        expect(JSON.parse(reply.body!)).toEqual({ error: "no such step" });
+      });
+    });
+
+    it("answers async mode before the run finishes", async () => {
+      await arm({ responseMode: "async", responseStatus: 204 });
       const reply = await service.deliverWebhook(request());
-      expect(reply.status).toBe(500);
-      expect(JSON.parse(reply.body!)).toEqual({ error: "no such step" });
-    });
-  });
-
-  it("rate limits a flood on one token", async () => {
-    await arm({});
-    const limiter = (
-      service as unknown as { webhookLimiter: { allow: () => boolean } }
-    ).webhookLimiter;
-    vi.spyOn(limiter, "allow").mockReturnValue(false);
-    expect(await service.deliverWebhook(request())).toEqual({ status: 429 });
-    expect(fired).toHaveLength(0);
-  });
-});
-
-describe("piece WEBHOOK-strategy triggers", () => {
-  const PIECE_BLOCK = "@acme/piece-x@1.0.0#trigger:new_thing";
-  let service: WorkflowRuntimeService;
-  let endpoints: Map<string, WebhookEndpointRow>;
-  let upserted: unknown[];
-  let delivered: { payload: unknown }[];
-
-  function armPiece(): Promise<void> {
-    return service.onOperations([
-      workflowOp({
-        name: "Piece hook",
-        status: "ENABLED",
-        version: 1,
-        trigger: { id: "t1", blockType: PIECE_BLOCK, config: {} },
-        steps: [],
-        edges: [],
-        variables: [],
-      }),
-    ]);
-  }
-
-  beforeEach(() => {
-    service = new WorkflowRuntimeService();
-    endpoints = new Map();
-    upserted = [];
-    delivered = [];
-    (service as unknown as { subgraph: unknown }).subgraph = {
-      reactorClient: { get: () => Promise.reject(new Error("not used")) },
-    };
-    (service as unknown as { storePromise: unknown }).storePromise =
-      Promise.resolve({
-        getWebhookEndpoint: (token: string) =>
-          Promise.resolve(endpoints.get(token)),
-        getWebhookEndpointForWorkflow: (workflowId: string) =>
-          Promise.resolve(
-            [...endpoints.values()].find(
-              (row) => row.workflow_id === workflowId,
-            ),
-          ),
-        ensureWebhookEndpoint: (
-          workflowId: string,
-          blockType: string,
-          mint: () => string,
-        ) => {
-          const existing = [...endpoints.values()].find(
-            (row) => row.workflow_id === workflowId,
-          );
-          if (existing) return Promise.resolve(existing);
-          const created: WebhookEndpointRow = {
-            token: mint(),
-            workflow_id: workflowId,
-            block_type: blockType,
-            created_at: "2026-09-07T00:00:00.000Z",
-          };
-          endpoints.set(created.token, created);
-          return Promise.resolve(created);
-        },
-      } as unknown as WorkflowRunStore);
-    // The strategy lookup is the piece catalog, not the network.
-    vi.spyOn(
-      service as unknown as {
-        pieceDelivery: () => Promise<"poll" | "webhook">;
-      },
-      "pieceDelivery",
-    ).mockResolvedValue("webhook");
-    const supervisor = service.supervisor();
-    vi.spyOn(supervisor, "upsert").mockImplementation((binding) => {
-      upserted.push(binding);
-      return Promise.resolve();
-    });
-    vi.spyOn(supervisor, "deliver").mockImplementation((_binding, payload) => {
-      delivered.push({ payload });
-      return Promise.resolve(1);
-    });
-  });
-
-  it("mints the endpoint before arming, so onEnable can register it", async () => {
-    await armPiece();
-    // Ordering matters: the piece registers this URL from inside onEnable.
-    expect([...endpoints.values()]).toHaveLength(1);
-    expect([...endpoints.values()][0].block_type).toBe(PIECE_BLOCK);
-    expect(upserted).toEqual([
-      expect.objectContaining({ blockType: PIECE_BLOCK, delivery: "webhook" }),
-    ]);
-  });
-
-  it("reports the endpoint as armed for the piece's block type", async () => {
-    await armPiece();
-    const endpoint = await service.webhookEndpoint(WORKFLOW);
-    expect(endpoint?.armed).toBe(true);
-    expect(endpoint?.url).toContain([...endpoints.keys()][0]);
-  });
-
-  it("hands an inbound request to the piece instead of firing directly", async () => {
-    await armPiece();
-    const token = [...endpoints.keys()][0];
-    const reply = await service.deliverWebhook(
-      request({ token, path: `/workflows/hooks/${token}` }),
-    );
-
-    // Answered before the piece runs, as Activepieces does.
-    expect(reply).toEqual({ status: 200 });
-    expect(delivered).toEqual([
-      {
-        payload: {
-          method: "POST",
-          path: `/workflows/hooks/${token}`,
-          headers: { "content-type": "application/json" },
-          queryParams: {},
-          body: { id: "evt_1" },
-        },
-      },
-    ]);
-  });
-
-  it("does not require raw bytes: the piece owns verification", async () => {
-    await armPiece();
-    const token = [...endpoints.keys()][0];
-    const reply = await service.deliverWebhook(
-      request({ token, path: `/workflows/hooks/${token}`, rawExact: false }),
-    );
-    expect(reply).toEqual({ status: 200 });
-    expect(delivered).toHaveLength(1);
-  });
-});
-
-describe("WorkflowRuntimeService.webhookEndpoint", () => {
-  it("reports the URL, its transport and whether it is armed", async () => {
-    const service = new WorkflowRuntimeService();
-    const row: WebhookEndpointRow = {
-      token: TOKEN,
-      workflow_id: WORKFLOW,
-      block_type: "core#webhook",
-      created_at: "2026-09-07T00:00:00.000Z",
-    };
-    (service as unknown as { storePromise: unknown }).storePromise =
-      Promise.resolve({
-        getWebhookEndpointForWorkflow: () => Promise.resolve(row),
-        ensureWebhookEndpoint: () => Promise.resolve(row),
-      } as unknown as WorkflowRunStore);
-    (service as unknown as { webhookMount: unknown }).webhookMount = {
-      transport: "server",
-      baseUrl: "https://hooks.example.com",
-      rawExact: true,
-    };
-
-    expect(await service.webhookEndpoint(WORKFLOW)).toEqual({
-      workflowId: WORKFLOW,
-      url: `https://hooks.example.com/workflows/hooks/${TOKEN}`,
-      transport: "server",
-      rawBodyVerification: true,
-      // No registration was seeded, so nothing is accepting deliveries.
-      armed: false,
-      createdAt: "2026-09-07T00:00:00.000Z",
+      expect(reply).toEqual({ status: 204 });
     });
   });
 });

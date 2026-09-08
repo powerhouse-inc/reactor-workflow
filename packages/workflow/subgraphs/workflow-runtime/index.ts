@@ -10,11 +10,11 @@ export class WorkflowRuntimeSubgraph extends BaseSubgraph {
   resolvers = getResolvers(this);
   additionalContextFields = {};
 
-  // The webhook endpoint is HTTP, not GraphQL, so it is mounted here rather
-  // than served by a resolver; see webhook-router for how the handle is found.
-  onSetup() {
-    workflowRuntime.mountWebhookEndpoint(this);
-    return Promise.resolve();
+  // The webhook endpoint is HTTP, not GraphQL, so it is registered here rather
+  // than served by a resolver. The subgraph's HTTP scope arrives already bound
+  // to this package's namespace, so its URL space is not ours to choose.
+  async onSetup() {
+    await workflowRuntime.registerWebhookEndpoint(this);
   }
 
   async onDisconnect() {}

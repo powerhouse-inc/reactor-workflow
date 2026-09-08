@@ -357,8 +357,6 @@ export async function fetchSecretStat(ref: string): Promise<SecretStat | null> {
 export interface WebhookEndpointRecord {
   workflowId: string;
   url: string;
-  transport: string;
-  rawBodyVerification: boolean;
   armed: boolean;
   createdAt: string;
 }
@@ -374,7 +372,7 @@ export async function fetchWebhookEndpoint(
     `query WebhookEndpoint($workflowId: String!) {
       workflowRuntime {
         webhookEndpoint(workflowId: $workflowId) {
-          workflowId url transport rawBodyVerification armed createdAt
+          workflowId url armed createdAt
         }
       }
     }`,

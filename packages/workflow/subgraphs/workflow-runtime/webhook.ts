@@ -1,22 +1,9 @@
-// Config parsing, signature verification and payload shaping for core#webhook,
-// all over the RAW bytes: a parse/stringify round trip breaks every signature.
-import {
-  createHmac,
-  randomBytes,
-  timingSafeEqual,
-  type BinaryLike,
-} from "node:crypto";
-
+// Config parsing for core#webhook. Verification, redaction and the payload
+// mechanics belong to the reactor's webhook service; what is left here is the
+// editor-facing shape of the trigger block.
 export const WEBHOOK_BLOCK = "core#webhook";
 
-// Spec path (plan/08 §7.2). The token is an opaque per-instance value, never
-// the workflow id: the URL is a bearer capability handed to a third party.
-export const WEBHOOK_PATH_PREFIX = "/workflows/hooks/";
-
 export const WEBHOOK_TRIGGER_KIND = "webhook";
-
-const TOKEN_BYTES = 16;
-const TOKEN_PATTERN = /^[0-9a-f]{32}$/;
 
 export const DEFAULT_TOLERANCE_SECONDS = 300;
 export const DEFAULT_DEDUPE_TTL_SECONDS = 300;
@@ -31,6 +18,14 @@ export type WebhookScheme =
   | "hmac-sha256"
   | "github"
   | "stripe";
+
+// A signed scheme with no secret is a configuration error, not a runtime one.
+const SIGNED_SCHEMES = new Set<WebhookScheme>([
+  "token",
+  "hmac-sha256",
+  "github",
+  "stripe",
+]);
 
 const SCHEMES = new Set<WebhookScheme>([
   "none",
@@ -48,13 +43,6 @@ const DEFAULT_HEADER: Record<WebhookScheme, string> = {
   github: "x-hub-signature-256",
   stripe: "stripe-signature",
 };
-
-const SIGNED_SCHEMES = new Set<WebhookScheme>([
-  "token",
-  "hmac-sha256",
-  "github",
-  "stripe",
-]);
 
 export const HTTP_METHODS = [
   "GET",
@@ -199,291 +187,19 @@ export function parseWebhookConfig(config: unknown): WebhookConfig {
 
 // The provider's event id, when the author named the field holding it. Only
 // top-level string/number fields qualify; anything else is not an id.
-export function dedupeKeyFor(
-  config: WebhookConfig,
-  payload: WebhookPayload,
-): string | undefined {
-  const field = config.dedupeField;
-  if (!field || !payload.body || typeof payload.body !== "object") {
-    return undefined;
-  }
-  const value = (payload.body as Record<string, unknown>)[field];
-  if (typeof value === "string" && value !== "") return value;
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  return undefined;
-}
-
-// The header a scheme reads by default, for the editor's placeholder text.
-export function defaultHeaderFor(scheme: WebhookScheme): string {
-  return DEFAULT_HEADER[scheme];
-}
-
-export function newEndpointToken(): string {
-  return randomBytes(TOKEN_BYTES).toString("hex");
-}
-
-export function isEndpointToken(value: string): boolean {
-  return TOKEN_PATTERN.test(value);
-}
-
-// "/workflows/hooks/<token>" -> token. Undefined for anything else, extra
-// path segments included: the endpoint has no sub-routes.
-export function tokenFromPath(pathname: string): string | undefined {
-  if (!pathname.startsWith(WEBHOOK_PATH_PREFIX)) return undefined;
-  const rest = pathname.slice(WEBHOOK_PATH_PREFIX.length);
-  return isEndpointToken(rest) ? rest : undefined;
-}
-
-export function webhookUrl(baseUrl: string, token: string): string {
-  return `${baseUrl.replace(/\/+$/, "")}${WEBHOOK_PATH_PREFIX}${token}`;
-}
-
-// Where this reactor is reachable from outside. Mirrors reactor-api's own
-// convention for the supergraph URL, so a Heroku deploy needs no extra config.
-export function resolveWebhookBaseUrl(
-  port?: number,
-  env: NodeJS.ProcessEnv = process.env,
-): string {
-  const configured = nonEmptyString(env.WORKFLOW_WEBHOOK_BASE_URL);
-  if (configured) return configured.replace(/\/+$/, "");
-  const heroku = nonEmptyString(env.HEROKU_APP_DEFAULT_DOMAIN_NAME);
-  if (heroku) return `https://${heroku}`;
-  return `http://localhost:${port ?? nonEmptyString(env.PORT) ?? 4001}`;
-}
-
-export type VerifyResult = { ok: true } | { ok: false; reason: string };
-
-const OK: VerifyResult = { ok: true };
-
-// Constant-time over equal-length inputs. A length mismatch is already a
-// rejection, so the early return leaks nothing a caller could not measure.
-function secureEquals(a: string, b: string): boolean {
-  const left = Buffer.from(a, "utf8");
-  const right = Buffer.from(b, "utf8");
-  if (left.length !== right.length) return false;
-  return timingSafeEqual(left, right);
-}
-
-function hmacHex(secret: string, payload: BinaryLike): string {
-  return createHmac("sha256", secret).update(payload).digest("hex");
-}
-
-// Stripe's header: "t=<unix>,v1=<hex>[,v1=<hex>…]". Any v1 may match, which
-// is how their key rotation works.
-function parseStripeHeader(value: string): {
-  timestamp?: number;
-  signatures: string[];
-} {
-  const signatures: string[] = [];
-  let timestamp: number | undefined;
-  for (const part of value.split(",")) {
-    const separator = part.indexOf("=");
-    if (separator < 0) continue;
-    const key = part.slice(0, separator).trim();
-    const item = part.slice(separator + 1).trim();
-    if (key === "t") timestamp = Number(item);
-    else if (key === "v1") signatures.push(item.toLowerCase());
-  }
-  return { timestamp, signatures };
-}
-
-// Verifies a request against the configured scheme; `raw` must be the exact
-// bytes received. The reason is for the log only: callers answer a fixed 401.
-export function verifyWebhookRequest(options: {
-  config: WebhookConfig;
-  headers: Record<string, string>;
-  raw: Buffer;
-  secret?: string;
-  now?: Date;
-}): VerifyResult {
-  const { config, headers, raw } = options;
-  if (config.scheme === "none") return OK;
-  if (!options.secret) return { ok: false, reason: "signing secret missing" };
-  // Absent and empty are one case: the index type hides the former.
-  const presented: string | undefined = headers[config.header];
-  if (!presented) {
-    return { ok: false, reason: `header "${config.header}" absent` };
-  }
-  const secret = options.secret;
-
-  switch (config.scheme) {
-    case "token":
-      return secureEquals(presented, secret)
-        ? OK
-        : { ok: false, reason: "token mismatch" };
-    case "hmac-sha256":
-      return secureEquals(presented.trim().toLowerCase(), hmacHex(secret, raw))
-        ? OK
-        : { ok: false, reason: "hmac mismatch" };
-    case "github": {
-      const expected = `sha256=${hmacHex(secret, raw)}`;
-      return secureEquals(presented.trim().toLowerCase(), expected)
-        ? OK
-        : { ok: false, reason: "hmac mismatch" };
-    }
-    case "stripe": {
-      const { timestamp, signatures } = parseStripeHeader(presented);
-      if (timestamp === undefined || !Number.isFinite(timestamp)) {
-        return { ok: false, reason: "no timestamp in the signature header" };
-      }
-      if (signatures.length === 0) {
-        return { ok: false, reason: "no v1 signature in the header" };
-      }
-      const nowMs = (options.now ?? new Date()).getTime();
-      if (Math.abs(nowMs / 1000 - timestamp) > config.toleranceSeconds) {
-        return { ok: false, reason: "timestamp outside the replay window" };
-      }
-      const expected = hmacHex(
-        secret,
-        Buffer.concat([Buffer.from(`${timestamp}.`, "utf8"), raw]),
-      );
-      // Every candidate is compared, so rotation does not change the timing.
-      let matched = false;
-      for (const signature of signatures) {
-        if (secureEquals(signature, expected)) matched = true;
-      }
-      return matched ? OK : { ok: false, reason: "hmac mismatch" };
-    }
-    default:
-      return { ok: false, reason: "unsupported scheme" };
-  }
-}
-
-export function methodAllowed(config: WebhookConfig, method: string): boolean {
-  return !config.methods || config.methods.includes(method.toUpperCase());
-}
-
-// Headers that would put a credential in the run journal. The configured
-// signature header joins them: it is an HMAC of the body under a live secret.
-const REDACTED_HEADERS = new Set([
-  "authorization",
-  "proxy-authorization",
-  "cookie",
-  "set-cookie",
-  "x-api-key",
-  "x-webhook-token",
-  "x-signature",
-  "x-hub-signature",
-  "x-hub-signature-256",
-  "stripe-signature",
-]);
-
-export const REDACTED = "[redacted]";
-
-export function redactHeaders(
-  headers: Record<string, string>,
-  extra?: string,
-): Record<string, string> {
-  const redacted: Record<string, string> = {};
-  for (const [name, value] of Object.entries(headers)) {
-    const key = name.toLowerCase();
-    redacted[key] =
-      REDACTED_HEADERS.has(key) || (extra && key === extra.toLowerCase())
-        ? REDACTED
-        : value;
-  }
-  return redacted;
-}
-
+/**
+ * The trigger payload, shaped like Activepieces' catch-webhook contract so
+ * authored expressions and adapted pieces agree on where a request's parts are.
+ *
+ * Everything that used to live below this line — token minting, the four
+ * signature schemes, header redaction, body decoding, dedupe keys, the
+ * challenge round and the rate limiter — is now the reactor's webhook service.
+ * None of it was about workflows.
+ */
 export interface WebhookPayload {
   method: string;
   path: string;
   headers: Record<string, string>;
   queryParams: Record<string, string>;
   body: unknown;
-}
-
-// JSON and form bodies become objects; anything else stays decoded text, so a
-// verified XML or CSV payload is still reachable downstream.
-export function parseWebhookBody(raw: Buffer, contentType?: string): unknown {
-  if (raw.length === 0) return undefined;
-  const type = (contentType ?? "").split(";")[0].trim().toLowerCase();
-  const text = raw.toString("utf8");
-  if (type === "application/json" || type.endsWith("+json")) {
-    try {
-      return JSON.parse(text) as unknown;
-    } catch {
-      // A malformed body is still evidence; hand the text through.
-      return text;
-    }
-  }
-  if (type === "application/x-www-form-urlencoded") {
-    return Object.fromEntries(new URLSearchParams(text));
-  }
-  return text;
-}
-
-// The trigger payload, shaped like Activepieces' catch-webhook contract so
-// authored expressions and adapted pieces agree on where a request's parts are.
-export function buildWebhookPayload(request: {
-  method: string;
-  path: string;
-  headers: Record<string, string>;
-  queryParams: Record<string, string>;
-  raw: Buffer;
-  signatureHeader?: string;
-}): WebhookPayload {
-  return {
-    method: request.method.toUpperCase(),
-    path: request.path,
-    headers: redactHeaders(request.headers, request.signatureHeader),
-    queryParams: request.queryParams,
-    body: parseWebhookBody(request.raw, request.headers["content-type"]),
-  };
-}
-
-// A provider's endpoint-verification round: echo the named value, start no
-// run. Query first, then a top-level body field, as providers send it.
-export function challengeResponse(
-  config: WebhookConfig,
-  payload: WebhookPayload,
-): string | undefined {
-  const field = config.challengeField;
-  if (!field) return undefined;
-  const fromQuery = payload.queryParams[field];
-  if (typeof fromQuery === "string" && fromQuery !== "") return fromQuery;
-  if (payload.body && typeof payload.body === "object") {
-    const value = (payload.body as Record<string, unknown>)[field];
-    if (typeof value === "string" && value !== "") return value;
-  }
-  return undefined;
-}
-
-// Per-endpoint token bucket (plan/08 §7.2): refills continuously, so a burst
-// up to `capacity` passes and the sustained rate is `perMinute`.
-export class WebhookRateLimiter {
-  private readonly buckets = new Map<
-    string,
-    { tokens: number; updatedAt: number }
-  >();
-  private readonly ratePerMs: number;
-
-  constructor(
-    private readonly perMinute = 120,
-    private readonly capacity = Math.max(perMinute, 10),
-    private readonly maxKeys = 4096,
-  ) {
-    this.ratePerMs = this.perMinute / 60_000;
-  }
-
-  allow(key: string, now = Date.now()): boolean {
-    const bucket = this.buckets.get(key);
-    if (!bucket) {
-      // Unbounded growth would make the limiter itself the flood target.
-      if (this.buckets.size >= this.maxKeys) this.buckets.clear();
-      this.buckets.set(key, { tokens: this.capacity - 1, updatedAt: now });
-      return true;
-    }
-    const refilled = Math.min(
-      this.capacity,
-      bucket.tokens + (now - bucket.updatedAt) * this.ratePerMs,
-    );
-    bucket.updatedAt = now;
-    if (refilled < 1) {
-      bucket.tokens = refilled;
-      return false;
-    }
-    bucket.tokens = refilled - 1;
-    return true;
-  }
 }

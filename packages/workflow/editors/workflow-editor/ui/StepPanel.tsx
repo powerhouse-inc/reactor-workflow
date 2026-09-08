@@ -802,12 +802,6 @@ function WebhookUrlSection(props: {
               config is invalid.
             </p>
           ) : null}
-          {!state.endpoint.rawBodyVerification ? (
-            <p className="mt-1 rounded bg-amber-50 px-2 py-1 text-[11px] text-amber-700">
-              This reactor cannot supply raw request bytes, so signed schemes
-              will be refused.
-            </p>
-          ) : null}
           <p className="mt-1 text-[11px] text-slate-400">
             Treat this URL as a secret; anyone holding it can reach the
             endpoint.

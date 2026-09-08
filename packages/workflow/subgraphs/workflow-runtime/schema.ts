@@ -121,10 +121,6 @@ export const schema: DocumentNode = gql`
   type WebhookEndpointRecord {
     workflowId: String!
     url: String!
-    "server | adapter | none — how the route reached the HTTP stack"
-    transport: String!
-    "False when the transport re-encodes bodies; signed schemes then refuse"
-    rawBodyVerification: Boolean!
     "True while the workflow is ENABLED with a valid webhook trigger"
     armed: Boolean!
     createdAt: String!

@@ -60,8 +60,6 @@ export interface SecretFormService {
 export interface WebhookEndpoint {
   workflowId: string;
   url: string;
-  transport: string;
-  rawBodyVerification: boolean;
   armed: boolean;
   createdAt: string;
 }

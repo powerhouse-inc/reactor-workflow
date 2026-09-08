@@ -63,21 +63,11 @@ export interface TriggerDedupeRow {
   created_at: string;
 }
 
-// One row per webhook trigger instance. The token is the endpoint's whole
-// credential, so it lives here and never on the workflow document.
-export interface WebhookEndpointRow {
-  token: string;
-  workflow_id: string;
-  block_type: string;
-  created_at: string;
-}
-
 export interface WorkflowRuntimeDB {
   run: RunRow;
   step_execution: StepExecutionRow;
   trigger_state: TriggerStateRow;
   trigger_dedupe: TriggerDedupeRow;
-  webhook_endpoint: WebhookEndpointRow;
 }
 
 async function up(db: IRelationalDb<WorkflowRuntimeDB>): Promise<void> {
@@ -129,15 +119,6 @@ async function up(db: IRelationalDb<WorkflowRuntimeDB>): Promise<void> {
     .addColumn("run_id", "text")
     .addColumn("created_at", "text", (col) => col.notNull())
     .addPrimaryKeyConstraint("trigger_dedupe_pk", ["workflow_id", "dedupe_key"])
-    .ifNotExists()
-    .execute();
-
-  await db.schema
-    .createTable("webhook_endpoint")
-    .addColumn("token", "text", (col) => col.primaryKey())
-    .addColumn("workflow_id", "text", (col) => col.notNull())
-    .addColumn("block_type", "text", (col) => col.notNull())
-    .addColumn("created_at", "text", (col) => col.notNull())
     .ifNotExists()
     .execute();
 
@@ -419,55 +400,6 @@ export class WorkflowRunStore {
     return true;
   }
 
-  async getWebhookEndpoint(
-    token: string,
-  ): Promise<WebhookEndpointRow | undefined> {
-    return this.db
-      .selectFrom("webhook_endpoint")
-      .selectAll()
-      .where("token", "=", token)
-      .executeTakeFirst();
-  }
-
-  async getWebhookEndpointForWorkflow(
-    workflowId: string,
-  ): Promise<WebhookEndpointRow | undefined> {
-    return this.db
-      .selectFrom("webhook_endpoint")
-      .selectAll()
-      .where("workflow_id", "=", workflowId)
-      .executeTakeFirst();
-  }
-
-  // The token survives config edits: a provider already points at this URL,
-  // and re-minting it on every save would silently break the integration.
-  async ensureWebhookEndpoint(
-    workflowId: string,
-    blockType: string,
-    mintToken: () => string,
-  ): Promise<WebhookEndpointRow> {
-    const existing = await this.getWebhookEndpointForWorkflow(workflowId);
-    if (existing) return existing;
-    const row: WebhookEndpointRow = {
-      token: mintToken(),
-      workflow_id: workflowId,
-      block_type: blockType,
-      created_at: new Date().toISOString(),
-    };
-    await this.db
-      .insertInto("webhook_endpoint")
-      .values(row)
-      .onConflict((oc) => oc.column("token").doNothing())
-      .execute();
-    return (await this.getWebhookEndpointForWorkflow(workflowId)) ?? row;
-  }
-
-  async deleteWebhookEndpoints(workflowId: string): Promise<void> {
-    await this.db
-      .deleteFrom("webhook_endpoint")
-      .where("workflow_id", "=", workflowId)
-      .execute();
-  }
 
   async recordDedupeRun(
     workflowId: string,

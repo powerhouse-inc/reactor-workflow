@@ -1,6 +1,13 @@
 // Package-level runtime shared by the subgraph (config + manual fire) and the
 // document-event processor; moves to a dedicated runtime package later.
-import type { BaseSubgraph } from "@powerhousedao/reactor-api";
+import type {
+  BaseSubgraph,
+  IWebhookEndpoints,
+  WebhookPolicy,
+  WebhookReply,
+  WebhookRequest,
+} from "@powerhousedao/reactor-api";
+
 import {
   ensurePieceBundle,
   parseBlockType,
@@ -67,26 +74,12 @@ import {
   type TriggerBinding,
 } from "./trigger-supervisor.js";
 import {
-  buildWebhookPayload,
-  challengeResponse,
-  dedupeKeyFor,
-  methodAllowed,
-  newEndpointToken,
   parseWebhookConfig,
-  resolveWebhookBaseUrl,
-  verifyWebhookRequest,
-  webhookUrl,
   WEBHOOK_BLOCK,
   WEBHOOK_TRIGGER_KIND,
-  WebhookRateLimiter,
   type WebhookConfig,
+  type WebhookPayload,
 } from "./webhook.js";
-import {
-  mountWebhookRoutes,
-  type WebhookMount,
-  type WebhookReply,
-  type WebhookRequest,
-} from "./webhook-router.js";
 import {
   lifecycleKindForDocumentAction,
   lifecycleKindForDriveAction,
@@ -264,6 +257,22 @@ const SUPERVISED_KINDS = new Set(["piece", "schedule", PIECE_WEBHOOK_KIND]);
 
 // Shared so no refusal path can accidentally answer with a distinguishing body.
 const UNAUTHORIZED: WebhookReply = { status: 401 };
+
+/**
+ * The trigger payload, shaped like Activepieces' catch-webhook contract so
+ * authored expressions and adapted pieces agree on where a request's parts
+ * are. The headers arrive already redacted and the body already decoded — both
+ * are the webhook service's job now.
+ */
+function webhookPayload(request: WebhookRequest): WebhookPayload {
+  return {
+    method: request.method,
+    path: request.path,
+    headers: request.headers,
+    queryParams: request.queryParams,
+    body: request.body,
+  };
+}
 
 export const POLL_INTERVAL_CONFIG_KEY = "pollEverySeconds";
 
@@ -443,17 +452,14 @@ export class WorkflowRuntimeService {
     const delivery = await this.pieceDelivery(binding);
     const resolved = { ...binding, delivery };
     if (delivery === "webhook") {
-      const store = await this.store();
-      await store?.ensureWebhookEndpoint(
-        workflowId,
-        binding.blockType,
-        newEndpointToken,
-      );
       this.registry.set(workflowId, {
         workflowId,
         kind: PIECE_WEBHOOK_KIND,
         binding: resolved,
       });
+      // Awaited: a delivery landing before the token exists would be refused,
+      // and the piece registers this URL with the provider from onEnable.
+      await this.webhookEndpoints?.endpointFor(workflowId);
     }
     // Arming downloads a bundle and calls the provider; that stays off the
     // operation-ingestion path.
@@ -505,12 +511,7 @@ export class WorkflowRuntimeService {
       config,
     });
     // Awaited: a delivery landing before the token exists would be refused.
-    const store = await this.store();
-    await store?.ensureWebhookEndpoint(
-      workflowId,
-      WEBHOOK_BLOCK,
-      newEndpointToken,
-    );
+    await this.webhookEndpoints?.endpointFor(workflowId);
   }
 
   // Triggers the supervisor drives on its tick: piece polls and schedules.
@@ -892,17 +893,64 @@ export class WorkflowRuntimeService {
     return store ? store.listTriggerStates() : [];
   }
 
-  private webhookMount?: WebhookMount;
-  private readonly webhookLimiter = new WebhookRateLimiter(
-    Number(process.env.WORKFLOW_WEBHOOK_RATE_PER_MINUTE) || undefined,
-  );
+  private webhookEndpoints?: IWebhookEndpoints;
 
-  // Called from the subgraph's onSetup; idempotent across hot reloads.
-  mountWebhookEndpoint(subgraph: BaseSubgraph): WebhookMount {
-    this.webhookMount = mountWebhookRoutes(subgraph, (request) =>
-      this.deliverWebhook(request),
-    );
-    return this.webhookMount;
+  /**
+   * Registers the workflow endpoint family with the reactor's webhook service.
+   * Called from the subgraph's onSetup; idempotent across hot reloads.
+   *
+   * Everything transport-shaped — the token, the signature schemes, the replay
+   * window, dedupe, the challenge round, redaction, the body cap and the rate
+   * limit — belongs to the service. What is left here is what is actually
+   * about workflows: which document a delivery belongs to, and what running it
+   * means.
+   */
+  async registerWebhookEndpoint(subgraph: BaseSubgraph): Promise<void> {
+    // The scope is read here rather than passed in: the subgraph's own type
+    // carries it, so there is one identity for it instead of two.
+    this.webhookEndpoints = await subgraph.http.webhooks.register({
+      name: "trigger",
+      policyFor: (workflowId) => this.webhookPolicy(workflowId),
+      onRequest: (request) => this.deliverWebhook(request),
+    });
+  }
+
+  /**
+   * The per-document policy the service enforces before a delivery reaches
+   * this code. Undefined means the workflow is not armed, which the service
+   * answers exactly as it answers an unknown token.
+   */
+  private async webhookPolicy(
+    workflowId: string,
+  ): Promise<WebhookPolicy | undefined> {
+    const registration = this.registry.get(workflowId);
+    if (!registration) return undefined;
+
+    // A piece owns its own verification and parsing: its run hook decides what
+    // the request means, or rejects it.
+    if (registration.kind === PIECE_WEBHOOK_KIND) return {};
+    if (registration.kind !== WEBHOOK_TRIGGER_KIND) return undefined;
+
+    const { config } = registration;
+    return {
+      methods: config.methods,
+      challengeField: config.challengeField,
+      dedupe: config.dedupeField
+        ? {
+            field: config.dedupeField,
+            ttlSeconds: config.dedupeTtlSeconds,
+          }
+        : undefined,
+      verify:
+        config.scheme === "none"
+          ? undefined
+          : {
+              scheme: config.scheme,
+              header: config.header,
+              secret: await this.webhookSecret(config, workflowId),
+              toleranceSeconds: config.toleranceSeconds,
+            },
+    };
   }
 
   // Design-time: the URL to hand the provider. Minted on demand so an author
@@ -910,107 +958,47 @@ export class WorkflowRuntimeService {
   async webhookEndpoint(workflowId: string): Promise<{
     workflowId: string;
     url: string;
-    transport: string;
-    rawBodyVerification: boolean;
     armed: boolean;
     createdAt: string;
   } | null> {
-    const store = await this.store();
-    if (!store) return null;
+    const endpoints = this.webhookEndpoints;
+    if (!endpoints) return null;
     const registration = this.registry.get(workflowId);
     const armed =
       registration?.kind === WEBHOOK_TRIGGER_KIND ||
       registration?.kind === PIECE_WEBHOOK_KIND;
-    const row = armed
-      ? await store.ensureWebhookEndpoint(
-          workflowId,
-          registration.kind === PIECE_WEBHOOK_KIND
-            ? registration.binding.blockType
-            : WEBHOOK_BLOCK,
-          newEndpointToken,
-        )
-      : await store.getWebhookEndpointForWorkflow(workflowId);
-    if (!row) return null;
-    const mount = this.webhookMount;
+
+    // Minting only for an armed workflow: handing out an endpoint that refuses
+    // every delivery would read as a broken integration. A disarmed workflow
+    // still shows the URL it already had, so re-enabling keeps it.
+    if (armed) await endpoints.endpointFor(workflowId);
+    const existing = (await endpoints.list()).find(
+      (entry) => entry.key === workflowId,
+    );
+    if (!existing) return null;
     return {
       workflowId,
-      url: webhookUrl(mount?.baseUrl ?? resolveWebhookBaseUrl(), row.token),
-      transport: mount?.transport ?? "none",
-      rawBodyVerification: mount?.rawExact ?? false,
+      url: existing.url,
       armed,
-      createdAt: row.created_at,
+      createdAt: existing.createdAt,
     };
   }
 
-  // Every refusal that could be probed answers a bare 401: an unknown token,
-  // a disarmed endpoint and a bad signature must be indistinguishable.
+  /**
+   * A delivery the service has already rate-limited, verified, de-duplicated
+   * and answered any challenge for. All that is left is deciding what it means.
+   */
   async deliverWebhook(request: WebhookRequest): Promise<WebhookReply> {
-    if (!this.webhookLimiter.allow(request.token)) return { status: 429 };
-    const store = await this.store();
-    if (!store) return { status: 503 };
-    const endpoint = await store.getWebhookEndpoint(request.token);
-    const registration = endpoint
-      ? this.registry.get(endpoint.workflow_id)
-      : undefined;
-    if (!endpoint || !registration) return UNAUTHORIZED;
+    const workflowId = request.key;
+    const registration = this.registry.get(workflowId);
+    if (!registration) return UNAUTHORIZED;
     if (registration.kind === PIECE_WEBHOOK_KIND) {
       return this.deliverToPiece(registration.binding, request);
     }
     if (registration.kind !== WEBHOOK_TRIGGER_KIND) return UNAUTHORIZED;
-    const workflowId = endpoint.workflow_id;
+
     const { config } = registration;
-    if (!methodAllowed(config, request.method)) return { status: 405 };
-
-    if (config.scheme !== "none") {
-      // Refusing beats verifying a re-encoded body: a pass would be a lie.
-      if (!request.rawExact) {
-        logger.error(
-          `Webhook for ${workflowId} needs raw bytes the mounted transport cannot supply`,
-        );
-        return { status: 503 };
-      }
-      const verdict = verifyWebhookRequest({
-        config,
-        headers: request.headers,
-        raw: request.raw,
-        secret: await this.webhookSecret(config, workflowId),
-      });
-      if (!verdict.ok) {
-        logger.warn(`Webhook rejected for ${workflowId}: ${verdict.reason}`);
-        return UNAUTHORIZED;
-      }
-    }
-
-    const payload = buildWebhookPayload({
-      method: request.method,
-      path: request.path,
-      headers: request.headers,
-      queryParams: request.queryParams,
-      raw: request.raw,
-      signatureHeader: config.header,
-    });
-
-    const challenge = challengeResponse(config, payload);
-    if (challenge !== undefined) {
-      return {
-        status: 200,
-        body: challenge,
-        contentType: "text/plain; charset=utf-8",
-      };
-    }
-
-    // A redelivery is answered as an acceptance: the provider has no other
-    // way to stop retrying, and the first delivery already ran.
-    const dedupeKey = dedupeKeyFor(config, payload);
-    if (dedupeKey) {
-      const claimed = await store.claimDedupe(
-        workflowId,
-        dedupeKey,
-        config.dedupeTtlSeconds * 1000,
-        new Date().toISOString(),
-      );
-      if (!claimed) return { status: config.responseStatus };
-    }
+    const payload = webhookPayload(request);
 
     if (config.responseMode === "async") {
       this.fireFromTrigger(workflowId, payload, WEBHOOK_TRIGGER_KIND);
@@ -1039,13 +1027,7 @@ export class WorkflowRuntimeService {
     binding: PieceTriggerBinding,
     request: WebhookRequest,
   ): WebhookReply {
-    const payload = buildWebhookPayload({
-      method: request.method,
-      path: request.path,
-      headers: request.headers,
-      queryParams: request.queryParams,
-      raw: request.raw,
-    });
+    const payload = webhookPayload(request);
     // Answered before the hook runs, as Activepieces does: a provider must not
     // wait on piece code, and its retry would only duplicate the delivery.
     this.supervisor()
