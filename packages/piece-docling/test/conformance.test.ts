@@ -77,4 +77,19 @@ describe("bundle conformance (Tier-1)", () => {
       await mock.close();
     }
   });
+
+  it("describes all six actions with their props", async () => {
+    const loaded = await loadPieceFromDir(builtBundleDir());
+    const descriptor = buildDescriptor(loaded.piece, {
+      packageName: "@powerhousedao/piece-docling",
+      version: "1.0.0",
+    });
+    const names = descriptor.actions.map((a) => a.name).sort();
+    expect(names).toEqual(["chunk", "convert_file", "convert_url", "get_result", "health", "submit_job"]);
+    const byName = Object.fromEntries(descriptor.actions.map((a) => [a.name, a]));
+    expect(byName["convert_file"].props.map((p) => p.name)).toContain("file");
+    expect(byName["submit_job"].props.map((p) => p.name)).toEqual(
+      expect.arrayContaining(["file", "url", "format"]),
+    );
+  });
 });
