@@ -4,8 +4,18 @@
     "outDir": "./.tsbuild",
     "module": "Preserve",
     "moduleResolution": "bundler",
-    "types": ["vitest/globals", "node"]
+    "types": [
+      "vitest/globals",
+      "node"
+    ],
+    "customConditions": []
   },
-  "include": ["**/*"],
-  "exclude": ["dist", "node_modules", ".tsbuild"]
+  "include": [
+    "**/*"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules",
+    ".tsbuild"
+  ]
 }

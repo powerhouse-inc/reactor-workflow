@@ -289,7 +289,7 @@ export class PaperlessClient {
   // arrives here for free (UiSettingsView returns get_all_permissions() with
   // the app-label prefix stripped).
   async uiSettings(): Promise<UiSettings> {
-    const response = await this.request<Record<string, unknown>>({
+    const response = await this.request<Record<string, unknown> | undefined>({
       path: "ui_settings/",
     });
     const body = response.data ?? {};

@@ -14,12 +14,12 @@ importers:
 
   packages/piece-paperless-ngx:
     dependencies:
-      '@activepieces/pieces-common':
-        specifier: 0.12.5
-        version: 0.12.5(bufferutil@4.1.0)(utf-8-validate@5.0.10)
       '@activepieces/pieces-framework':
         specifier: 0.32.0
         version: 0.32.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
+      '@activepieces/shared':
+        specifier: 0.95.1
+        version: 0.95.1(bufferutil@4.1.0)(utf-8-validate@5.0.10)
     devDependencies:
       '@types/node':
         specifier: ^24.13.3
@@ -165,9 +165,6 @@ importers:
         version: 4.3.6
 
 packages:
-
-  '@activepieces/pieces-common@0.12.5':
-    resolution: {integrity: sha512-2jfLvvbHw6sx1z5KZy6fRrz2XXnhBtBoG/UVkseSXuTUKb+6rBQdPekRwtPIMMeOYYqnXS5WXFaLvB21k7RVTg==}
 
   '@activepieces/pieces-framework@0.32.0':
     resolution: {integrity: sha512-sAJRjGEKbdqBXHP9eiffm3CM3iijt355gh6aDvhnh4/wa0T10W0I5dtXbQpkbMdIsY5ZpeNV092C8+k94nMyEA==}
@@ -5727,18 +5724,10 @@ packages:
     resolution: {integrity: sha512-wvUjBtSGN7+7SjNpq/9M2Tg350UZD3q62IFZLbRAR1bSMlCo1ZaeW+BJ+D090e4hIIZLBcTDWe4Mh4jvUDajzQ==}
     engines: {node: '>= 0.4'}
 
-  axios-retry@4.4.1:
-    resolution: {integrity: sha512-JGzNoglDHtHWIEvvAampB0P7jxQ/sT4COmW0FgSQkVg6o4KqNjNMBI6uFVOq517hkw/OAYYAG08ADtBlV8lvmQ==}
-    peerDependencies:
-      axios: 0.x || 1.x
-
   axios-retry@4.5.0:
     resolution: {integrity: sha512-aR99oXhpEDGo0UuAlYcn2iGRds30k366Zfa05XWScR9QaQD4JYiP3/1Qt1u7YlefUOK+cn0CcwoL1oefavQUlQ==}
     peerDependencies:
       axios: 0.x || 1.x
-
-  axios@1.15.2:
-    resolution: {integrity: sha512-wLrXxPtcrPTsNlJmKjkPnNPK2Ihe0hn0wGSaTEiHRPxwjvJwT3hKmXF4dpqxmPO9SoNb2FsYXj/xEo0gHN+D5A==}
 
   axios@1.16.0:
     resolution: {integrity: sha512-6hp5CwvTPlN2A31g5dxnwAX0orzM7pmCRDLnZSX772mv8WDqICwFjowHuPs04Mc8deIld1+ejhtaMn5vp6b+1w==}
@@ -6959,10 +6948,6 @@ packages:
   foreground-child@3.3.1:
     resolution: {integrity: sha512-gIXjKqtFuWEgzFRJA9WCQeSJLZDjgJUOMCMzxtvFq/37KojM1BFGufqsCy0r4qSQmYLsZYMeyRqzIWOMup03sw==}
     engines: {node: '>=14'}
-
-  form-data@4.0.4:
-    resolution: {integrity: sha512-KrGhL9Q4zjj0kiUt5OO4Mr/A/jlI2jDYs5eHBpYHPcBEVSiipAvn2Ko2HnPe20rmcuuvMHNdZFp+4IlGTMF0Ow==}
-    engines: {node: '>= 6'}
 
   form-data@4.0.6:
     resolution: {integrity: sha512-vKatAh4SlVfgbv+YtmhiRjhEMJsYpsG1Y2rMQtR+SVSbytsSD1YGzDIcrAJmdFec88u/+VoGmxnl+80gL1tRCQ==}
@@ -10971,24 +10956,6 @@ packages:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
 
 snapshots:
-
-  '@activepieces/pieces-common@0.12.5(bufferutil@4.1.0)(utf-8-validate@5.0.10)':
-    dependencies:
-      '@activepieces/pieces-framework': 0.32.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
-      '@activepieces/shared': 0.95.1(bufferutil@4.1.0)(utf-8-validate@5.0.10)
-      axios: 1.15.2
-      axios-retry: 4.4.1(axios@1.15.2)
-      form-data: 4.0.4
-      http-proxy-agent: 7.0.2
-      https-proxy-agent: 7.0.6
-      mime-types: 2.1.35
-      tslib: 2.6.2
-      zod: 4.3.6
-    transitivePeerDependencies:
-      - bufferutil
-      - debug
-      - supports-color
-      - utf-8-validate
 
   '@activepieces/pieces-framework@0.32.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)':
     dependencies:
@@ -20032,23 +19999,10 @@ snapshots:
     dependencies:
       possible-typed-array-names: 1.1.0
 
-  axios-retry@4.4.1(axios@1.15.2):
-    dependencies:
-      axios: 1.15.2
-      is-retry-allowed: 2.2.0
-
   axios-retry@4.5.0(axios@1.16.0):
     dependencies:
       axios: 1.16.0
       is-retry-allowed: 2.2.0
-
-  axios@1.15.2:
-    dependencies:
-      follow-redirects: 1.16.0
-      form-data: 4.0.6
-      proxy-from-env: 2.1.0
-    transitivePeerDependencies:
-      - debug
 
   axios@1.16.0:
     dependencies:
@@ -21436,14 +21390,6 @@ snapshots:
     dependencies:
       cross-spawn: 7.0.6
       signal-exit: 4.1.0
-
-  form-data@4.0.4:
-    dependencies:
-      asynckit: 0.4.0
-      combined-stream: 1.0.8
-      es-set-tostringtag: 2.1.0
-      hasown: 2.0.4
-      mime-types: 2.1.35
 
   form-data@4.0.6:
     dependencies:
