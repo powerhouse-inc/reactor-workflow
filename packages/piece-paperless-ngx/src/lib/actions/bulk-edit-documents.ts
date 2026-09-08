@@ -58,7 +58,7 @@ export const bulkEditDocuments = createAction({
       required: true,
       refreshers: ["method"],
       props: async ({ method }): Promise<InputPropertyMap> => {
-        switch (method as unknown as Method) {
+        switch (String(method) as Method) {
           case "set_correspondent":
             return { correspondent: objectPicker("correspondents") };
           case "set_document_type":

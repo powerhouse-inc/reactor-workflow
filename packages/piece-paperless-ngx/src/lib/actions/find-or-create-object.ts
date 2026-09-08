@@ -46,7 +46,7 @@ export const findOrCreateObject = createAction({
       required: false,
       refreshers: ["object_type"],
       props: async ({ object_type }): Promise<InputPropertyMap> => {
-        switch (object_type as unknown as ObjectKind) {
+        switch (String(object_type) as ObjectKind) {
           case "tags":
             return {
               color: Property.ShortText({
