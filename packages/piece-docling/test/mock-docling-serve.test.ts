@@ -1,4 +1,4 @@
-import { startMockDocling, MOCK_MD, type MockDocling } from "./mock-docling-serve.js";
+import { startMockDocling, MOCK_MD, MOCK_CHUNKS, type MockDocling } from "./mock-docling-serve.js";
 
 let mock: MockDocling;
 
@@ -67,6 +67,28 @@ it("async: submit → poll (started → success) → result", async () => {
   const result = await get(`/v1/result/${task.task_id}`, "k-test");
   expect(result.body).toMatchObject({ status: "success" });
   expect((result.body as { document: { json_content: unknown } }).document.json_content).toBeTruthy();
+});
+
+it("chunk async: submit → poll → result returns the chunk payload, not a document", async () => {
+  const sub = await fetch(mock.baseUrl + "/v1/chunk/async", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": "k-test" },
+    body: JSON.stringify({
+      sources: [{ kind: "file", base64_string: "AAAA", filename: "c.pdf" }],
+      options: { to_formats: ["md"] },
+    }),
+  });
+  const task = (await sub.json()) as { task_id: string; task_status: string; task_type: string };
+  expect(task.task_type).toBe("chunk");
+  expect(task.task_status).toBe("pending");
+  const p1 = await get(`/v1/status/poll/${task.task_id}?wait=5`, "k-test");
+  expect(p1.body).toMatchObject({ task_status: "started" });
+  const p2 = await get(`/v1/status/poll/${task.task_id}?wait=5`, "k-test");
+  expect(p2.body).toMatchObject({ task_status: "success" });
+  const result = await get(`/v1/result/${task.task_id}`, "k-test");
+  expect(result.status).toBe(200);
+  expect(result.body).toMatchObject({ chunks: MOCK_CHUNKS, processing_time: 0.3 });
+  expect((result.body as { document?: unknown }).document).toBeUndefined();
 });
 
 it("reports 429 with Retry-After for backpressure, then succeeds", async () => {

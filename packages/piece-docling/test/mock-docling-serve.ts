@@ -40,6 +40,7 @@ interface Task {
   failing: boolean;
   filename: string;
   formats: string[];
+  kind: "convert" | "chunk";
 }
 
 function readBody(req: http.IncomingMessage): Promise<string> {
@@ -146,6 +147,7 @@ export async function startMockDocling(opts: MockDoclingOptions = {}): Promise<M
         failing: (opts.failJobs ?? []).includes(sources[0]?.filename ?? ""),
         filename: String(filename).split("/").pop() ?? "doc",
         formats: body.options?.to_formats ?? ["md"],
+        kind: p.startsWith("/v1/chunk") ? "chunk" : "convert",
       });
       return json(res, 200, {
         task_id: id,
@@ -190,7 +192,7 @@ export async function startMockDocling(opts: MockDoclingOptions = {}): Promise<M
           failure: { category: "inference_failure", message: "mock inference failure", retryable: false },
         });
       }
-      if (p.startsWith("/v1/chunk")) {
+      if (task.kind === "chunk") {
         return json(res, 200, { chunks: MOCK_CHUNKS, processing_time: 0.3 });
       }
       return json(res, 200, successResponse(task.filename, task.formats));
