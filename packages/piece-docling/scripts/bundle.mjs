@@ -9,9 +9,15 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(here);
 const args = process.argv.slice(2);
-const outArg = args[args.indexOf("--out") + 1];
-const nameArg = args[args.indexOf("--name") + 1];
-const outDir = outArg ?? path.join(root, "dist");
+// A flag's value, or undefined when the flag is absent. indexOf returns -1 for a
+// missing flag; indexing args[-1 + 1] would wrongly return args[0] (e.g. "--out")
+// and corrupt the package name.
+const flagArg = (flag) => {
+  const i = args.indexOf(flag);
+  return i < 0 ? undefined : args[i + 1];
+};
+const outDir = flagArg("--out") ?? path.join(root, "dist");
+const nameArg = flagArg("--name");
 const pkg = JSON.parse(
   await (await import("node:fs/promises")).readFile(path.join(root, "package.json"), "utf8"),
 );
