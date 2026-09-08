@@ -2,6 +2,7 @@ import { convertFileAction } from "../src/lib/actions/convert-file.js";
 import { makeActionContext } from "./mock-context.js";
 import { startMockDocling, MOCK_MD } from "./mock-docling-serve.js";
 import { DoclingError } from "../src/lib/errors.js";
+import { convertUrlAction } from "../src/lib/actions/convert-url.js";
 
 function ctx(props: Record<string, unknown>, baseUrl = "http://127.0.0.1:1") {
   return makeActionContext(props, {
@@ -66,5 +67,30 @@ describe("convert_file", () => {
 
   it("rejects a missing file", async () => {
     await expect(convertFileAction.run(ctx({}))).rejects.toMatchObject({ kind: "BAD_FILE" });
+  });
+});
+
+describe("convert_url", () => {
+  it("converts an http source (sync mode)", async () => {
+    const mock = await startMockDocling({ apiKey: "k-test" });
+    try {
+      const out = await convertUrlAction.run(
+        ctx({ url: "https://example.com/x.pdf", execution: "sync" }, mock.baseUrl),
+      ) as { document: { md_content: string }; status: string };
+      expect(out.status).toBe("success");
+      expect(out.document.md_content).toBe(MOCK_MD);
+    } finally { await mock.close(); }
+  });
+
+  it("rejects zip URLs before hitting the server", async () => {
+    const mock = await startMockDocling({ apiKey: "k-test" });
+    try {
+      await expect(
+        convertUrlAction.run(ctx({ url: "https://example.com/x.zip", execution: "sync" })),
+      // vitest's stringMatching factory is any; suppression is line-scoped (R14)
+      // oxlint-disable-next-line typescript/no-unsafe-assignment
+      ).rejects.toMatchObject({ kind: "VALIDATION", message: expect.stringMatching(/zip/) });
+      expect(mock.requests.length).toBe(0);
+    } finally { await mock.close(); }
   });
 });

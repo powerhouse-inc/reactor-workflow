@@ -5,6 +5,7 @@ import { DoclingError } from "./lib/errors.js";
 import { httpClient, HttpMethod } from "@activepieces/pieces-common";
 import { healthAction } from "./lib/actions/health.js";
 import { convertFileAction } from "./lib/actions/convert-file.js";
+import { convertUrlAction } from "./lib/actions/convert-url.js";
 
 const DOC_LOGO =
   "data:image/svg+xml," +
@@ -20,7 +21,7 @@ const result = createPiece({
   authors: ["froid"],
   categories: [PieceCategory.CONTENT_AND_FILES],
   auth: doclingAuth,
-  actions: [healthAction, convertFileAction],
+  actions: [healthAction, convertFileAction, convertUrlAction],
   triggers: [],
 });
 
