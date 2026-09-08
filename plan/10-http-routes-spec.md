@@ -1,7 +1,13 @@
 # 10 — Package-hosted HTTP routes and webhooks
 
-Status: draft. Supersedes the transport half of the `core#webhook` workaround in
-`packages/workflow/subgraphs/workflow-runtime/webhook-router.ts`.
+Status: **implemented**, awaiting release. Layers 0-2 and the workflow port are
+built and tested; §8 records what shipped, what changed under contact with the
+code, and what was deliberately deferred. `webhook-router.ts` is deleted.
+
+The one thing not yet done is the release ordering: the workflow port depends on
+a `@powerhousedao/reactor-api` that carries the route service, which is not
+published. Until it is, `reactor-workflow` builds against a local `link:`
+override that must stay out of the manifest (see §8.4).
 
 Companion to `02-feature-spec.md` §7.2 (fleet behaviour of webhooks) and
 `09-secrets-service-spec.md` (signing secrets by ref). Answers the open spike in
@@ -11,11 +17,12 @@ the answer is **no, it cannot deliver raw bytes today**, and §2 fixes that.
 ## 1. Why
 
 `reactor-workflow` needs an inbound HTTP endpoint so providers can deliver
-webhooks. The shipped implementation reaches through `GraphQLManager`'s private
-fields for the `http.Server` and mounts a listener itself, because
-`mountNodeRoute` cannot honour a signature computed over the request bytes.
-That is 303 lines of transport plumbing in a workflow package, and about 300 of
-the 489 lines in its `webhook.ts` are not about workflows either.
+webhooks. The implementation this document replaced reached through
+`GraphQLManager`'s private fields for the `http.Server` and mounted a listener
+itself, because `mountNodeRoute` could not honour a signature computed over the
+request bytes. That was 303 lines of transport plumbing in a workflow package,
+and about 300 of the 489 lines in its `webhook.ts` were not about workflows
+either.
 
 The generic capability is **route hosting**; a webhook is a *policy preset* on
 top of it. Three consumers already exist in the monorepo with nothing shared
@@ -123,7 +130,8 @@ directly and cannot be undone — Express 4.21.1 has no route-removal API, and
 splicing `app._router.stack` is not an option we should take.
 
 **Decision: dispatch every route through a mutable registry behind one stable
-framework route per adapter.** Give Express Fastify's shape — two constructor-time
+framework route per adapter**, with every registration returning an
+`AdapterRouteHandle` carrying `dispose()`. Give Express Fastify's shape — two constructor-time
 layers (a pre-parse router for node routes, which also fixes §2.1, and the
 dispatching router), with `getRoute` moved off `#app.get` into a map. Then
 `dispose()` is synchronous, framework-independent and identical in both adapters.
@@ -211,6 +219,9 @@ export interface IHttpScope {
   nodeRoute(spec: NodeRouteSpec): RouteHandle;
 
   readonly webhooks: IWebhookScope;
+
+  /** Release every route this scope registered. Called on package teardown. */
+  dispose(): void;
 }
 
 export interface RouteOptions {
@@ -253,6 +264,15 @@ export interface RouteHandle {
   dispose(): void;
 }
 ```
+
+Two handle types exist, and the distinction is load-bearing: this one carries
+the public URL the route answers on, while the adapter's `AdapterRouteHandle`
+(§2.3) carries only `dispose()`. At the adapter layer there is no namespace to
+build a URL from. They were briefly both called `RouteHandle` and collided in
+the bundled `.d.mts`; see §8.2.
+
+`method` is typed `RouteMethod` in the shipped code rather than `HttpMethod` —
+the latter name belongs to the adapter layer.
 
 ### 3.1 Ergonomics, measured against Express and Fastify
 
@@ -456,11 +476,50 @@ export interface IWebhookScope {
 
 export interface IWebhookEndpoints {
   /** The caller passes its own key (e.g. a document id); the service mints the token. */
-  endpointFor(key: string): Promise<{ url: string; token: string }>;
+  endpointFor(key: string): Promise<Omit<WebhookEndpointInfo, "key">>;
   revoke(key: string): Promise<void>;
   list(): Promise<WebhookEndpointInfo[]>;
 }
+
+export interface WebhookSpec extends WebhookPolicy {
+  /** Distinguishes several endpoint families within one package. */
+  name: string;
+  onRequest: (request: WebhookRequest) => Promise<WebhookReply> | WebhookReply;
+  /**
+   * The policy for one endpoint, merged over the registration's own.
+   * Undefined means "not currently armed", answered exactly as an unknown
+   * token is.
+   */
+  policyFor?: (key: string) => Promise<WebhookPolicy | undefined> | WebhookPolicy | undefined;
+  rateLimit?: { perMinute: number };
+}
+
+export interface WebhookPolicy {
+  verify?: WebhookVerification;
+  /** Uppercase. Undefined accepts every method. */
+  methods?: string[];
+  dedupe?: { field: string; ttlSeconds?: number };
+  challengeField?: string;
+  maxBodyBytes?: number;
+}
 ```
+
+**The policy resolves per endpoint, not per registration.** This is the seam that
+matters in practice: a package registers *one* family and serves thousands of
+endpoints from it, each with its own secret, its own dedupe field, its own
+allowed methods and its own challenge field — because for a workflow all of that
+is document configuration. A registration-level field is the wrong place for
+anything an author edits. Three of the four defects a review later found lived
+exactly here; see §8.2.
+
+`endpointFor` answers with `createdAt` as well as the URL and token, so a caller
+wanting the mint date does not have to `list()` every endpoint in the package to
+find one — that call is on the editor's query path and grows with workflow count.
+
+The advertised URL is **always absolute**. A relative path is useless to the
+third party that has to call it, and worse than useless once a package has
+registered one upstream, so the origin falls back through `PUBLIC_URL`,
+`RENDER_EXTERNAL_URL` and a bare deploy domain to the local origin.
 
 Owned by core: token minting and lookup, the signature schemes (shared-token
 header, bare hex HMAC, GitHub's `sha256=`, Stripe's `t=`/`v1=` with a replay
@@ -482,8 +541,16 @@ Four properties this buys:
 * **Fleet behaviour falls out.** Tokens in a core relational namespace mean any
   host serves any endpoint — what `02-feature-spec.md` §7.2 already assumes.
 
-Webhook routes are POST-only, and always `body: "raw"` — which is why §2.1 is a
-hard prerequisite rather than a nicety.
+Webhook routes are always `body: "raw"` — which is why §2.1 is a hard
+prerequisite rather than a nicety.
+
+**Revised from POST-only.** All six methods are mounted, and which ones an
+endpoint accepts is `policy.methods`, defaulting to all. A provider's
+verification round may probe with `GET` even when its deliveries are `POST`, and
+refusing a method is the registration's decision, not the transport's. Mounting
+`POST` alone would have let a `GET` probe fall through to the framework's own
+404, which both leaks the difference between a live and a dead endpoint and fails
+the probe for no reason.
 
 ### 4.1 URL shape
 
@@ -505,7 +572,19 @@ buys nothing once a reserved-prefix deny-list exists.
 
 Editor-facing config parsing (`parseWebhookConfig`), which body field carries the
 dedupe key, sync-vs-async response, and firing the run. `webhook-router.ts`
-disappears entirely, including `reactorHandles()`.
+disappeared entirely, including `reactorHandles()`; `webhook.ts` went from 489
+lines to 198, and the port removed 2,690 lines net.
+
+Two things the port had to keep that read as transport but are not:
+
+* **The sync-mode delivery timeout.** Sync mode holds the provider's socket, so
+  the wait is bounded at 30s (`WORKFLOW_WEBHOOK_TIMEOUT_MS`) and answers 504
+  while letting the run continue — cancelling would lose work the provider has
+  already been told about, and the retry that follows is what the dedupe field
+  absorbs. This is a workflow decision because only workflows have runs that
+  outlive a request.
+* **The response content type.** Core defaults an unlabelled body to
+  `text/plain`; the sync reply is JSON and says so.
 
 Revised from earlier thinking: **dedupe and the challenge echo are not
 workflow-specific.** Every provider redelivers and most probe before they will
@@ -599,11 +678,26 @@ See §2. Headline: raw-body behaviour is content-type-dependent in opposite
 directions per adapter; Fetch responses never stream; nothing can be unmounted;
 `handle` has no consumers.
 
+Fetch-response streaming is fixed here (§2.2). The *GraphQL-over-SSE* symptom it
+caused is filed as
+[#2971](https://github.com/powerhouse-inc/powerhouse/issues/2971) and left
+alone: the buffering bug is gone, but nothing in this work re-tests the
+subscription path end to end.
+
 ### 6.3 Identity and teardown facts
 
 See §3.2 and §5.4. Headline: the map key is not a package name; `ISubgraph.path`
 is package-writable and overridable by a field initializer; `unregisterFactory`
 is the only package-scoped teardown that exists.
+
+Both of the pre-existing holes are filed rather than fixed here, because both are
+older than this work and neither is reachable through `IHttpScope`:
+[#2972](https://github.com/powerhouse-inc/powerhouse/issues/2972)
+(`ISubgraph.path` lets a package mount itself anywhere) and
+[#2973](https://github.com/powerhouse-inc/powerhouse/issues/2973) (removed
+packages are never torn down, so subgraphs, routes and processors leak on reload
+and uninstall). `IHttpScope.dispose()` and the `RouteHandle` handles are the half
+of #2973 this work *can* supply — the teardown call site still does not exist.
 
 ### 6.4 Reserved prefixes
 
@@ -629,6 +723,8 @@ routes under `/api/` rather than under `/graphql/`.
 
 ## 7. Sequencing
 
+Status per step is in §8.1.
+
 1. **Layer 0**, as one change to both adapters: registry-based dispatch behind a
    stable framework route, raw-body guarantee, response streaming, `dispose()`
    handles, params, `PATCH`, honest `prefix`, 404/405 synthesis — with the
@@ -645,7 +741,9 @@ routes under `/api/` rather than under `/graphql/`.
    one package at different versions failing loudly rather than
    last-write-wins.
 3. Thread it through `SubgraphArgs` (plus the discarded package name) and the
-   per-package processor host module. Close the `ISubgraph.path` hole.
+   per-package processor host module. Close the `ISubgraph.path` hole — *split
+   out to [#2972](https://github.com/powerhouse-inc/powerhouse/issues/2972);
+   the threading is done, the hole is not.*
 4. Migrate the in-tree consumers that fit — attachments first, since it exercises
    nearly every capability and its `mountAuthenticatedNodeRoute` wrapper is the
    thing being replaced.
@@ -654,3 +752,98 @@ routes under `/api/` rather than under `/graphql/`.
 
 Filed separately, not blocking: GraphQL-over-SSE has been non-functional since
 the Fetch bridge buffered responses (§2.2).
+
+## 8. Implementation record
+
+### 8.1 What shipped
+
+Monorepo branch `feat/core-http-routes` (11 commits), `reactor-workflow` branch
+`workflow/webhook-trigger` (3 commits on top of the original feature).
+
+| Step | State |
+| --- | --- |
+| 1. Layer 0 — registry dispatch, raw bodies, streaming, `dispose()`, params, `PATCH`, honest `prefix` | done |
+| 2. `IHttpScope` — verbatim-name namespace, structural prefix, four auth modes, disposal | done |
+| 3. Threaded through `SubgraphArgs`, `BaseSubgraph.http`, processor host module | done; `ISubgraph.path` hole deferred to #2972 |
+| 4. Migrate in-tree consumers (attachments, MCP, `d/:drive`) | **not started** — see §8.3 |
+| 5. `IWebhookScope` + token table in a core relational namespace | done |
+| 6. Port `reactor-workflow`, delete `webhook-router.ts` | done |
+| — Load balancer route classes for `/webhooks` and `/api` | done, not in the original plan |
+
+Tests: reactor-api 923, switchboard 163, reactor-mcp 43, reactor-workflow 333,
+switchboard-lb busted 18. End-to-end against a real switchboard with a real
+PGlite store and a workflow armed through GraphQL: absolute URL minted, challenge
+echoed without firing a run, 202 on delivery, 200 and no second run on
+redelivery, token stable across restart, and disarmed / unknown / malformed
+tokens answering byte-identically.
+
+### 8.2 Defects found after the first pass
+
+Recorded because each one is a place the design was right and the code was not,
+and three of the four sit on the same seam — registration versus endpoint (§4).
+
+* **The challenge field was read off the registration.** So it was always
+  undefined, and a provider's verification round started a run and got a 202
+  instead of the echo. Slack and Facebook send that round *before* they will
+  accept a URL, so the integration could never be established. The single most
+  consequential defect in the work, and invisible to every unit test that
+  supplied the field at registration.
+* **`rateLimit` was never read.** One shared limiter at its default served every
+  registration, so a declared limit was inert and one package's flood came out of
+  another's bucket.
+* **Dedupe was inverted.** `numInsertedOrUpdatedRows` is unreliable against
+  PGlite and returned zero every time, so every delivery read as a redelivery
+  and no workflow would ever have run. Only an integration test against the real
+  store could show this; it now claims by a random id and reads the claim back.
+* **A relative advertised URL** when the host knew no public origin (§4).
+
+And two in the workflow port: `onSetup` awaited the registration unguarded, so a
+host merely lacking a webhook store lost the *entire* subgraph — resolvers,
+document-event and schedule triggers included, because the manager awaits
+`onSetup`; and seeding, which starts from the subgraph constructor before
+`onSetup`, raced the registration and left a restored webhook workflow with no
+token.
+
+The naming collision: the adapter handle and the scope handle were both
+`RouteHandle`, which the bundler resolved to `RouteHandle$1` and left
+`subgraph.http.webhooks.register` untyped downstream. The adapter's is now
+`AdapterRouteHandle`.
+
+### 8.3 Deliberately not done
+
+* **The in-tree consumers are not migrated** (step 4). Attachments, MCP and
+  `d/:drive` still call the adapter directly, and
+  `apps/switchboard/src/attachments/mount-auth.ts` still exists. Nothing about
+  the new layer forces them to move, and migrating attachments — seven routes
+  exercising request *and* response streaming, real `HEAD`, forwarded-header base
+  URLs and two auth modes — is the step that would prove the scope is
+  sufficient rather than merely adequate for webhooks. It is the natural next
+  piece of work and the honest test of §3.
+* **No token migration** from the workflow-local `webhook_endpoint` table. That
+  table is dropped; the earlier endpoint never reached `main`, so no provider has
+  a URL registered, and minting fresh under the new path beats a half-migration.
+* `#2971`, `#2972`, `#2973` as above.
+
+### 8.4 Release ordering
+
+The two branches cannot merge in either order freely:
+
+1. Merge the monorepo branch and publish `@powerhousedao/reactor-api`.
+2. Bump `reactor-workflow` to that version and delete the local `link:`
+   override.
+3. Merge `reactor-workflow`.
+
+Step 2 is not optional. The override was briefly committed — an absolute path
+under one developer's home, with the lockfile regenerated around it, which fails
+`pnpm install` for everyone else and for CI. It is reverted; keep it a working-tree
+change only.
+
+### 8.5 Unrelated bug found while testing
+
+`reactor-connectors` builds its piece-worker entry to
+`reactor-connectors/dist/worker-entry.js` (`tsdown.config.ts:6`), but
+`src/activepieces/worker/host.ts:80` resolves it against the *workflow* package's
+`dist/`. The processor that feeds the trigger registry fails to create, so no
+operations reach it and both webhook and piece triggers are silently dead in local
+dev — with an error message that points at a missing build rather than a wrong
+path. Not filed.

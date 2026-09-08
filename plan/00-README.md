@@ -15,6 +15,13 @@ Read in order:
 | 6 | [`06-ap-red-compatible-architecture.md`](./06-ap-red-compatible-architecture.md) | Can we run Activepieces pieces and Node-RED nodes unmodified? Measured against both checkouts: yes for pieces (gated on one missing surface), no for nodes; which of their MIT/Apache components to reuse; questions Q22–Q25 |
 | 7 | [`07-domain-providers-spec.md`](./07-domain-providers-spec.md) | **Value domains** — a document-model-layer feature unifying **scalars** (shippable as a new module kind) and **domain providers** under one contract with three reaches, plus how an impure check coexists with portable, verifiable documents (attestation). Questions Q26–Q31 |
 | 8 | [`08-workflow-automation-spec.md`](./08-workflow-automation-spec.md) | **The feature specification, rewritten** as an Activepieces-compatible runtime. **Supersedes doc 2.** |
+| 9 | [`09-secrets-service-spec.md`](./09-secrets-service-spec.md) | How a secret is stored, minted and rotated, replacing env-var resolution. *Proposed* |
+| 10 | [`10-http-routes-spec.md`](./10-http-routes-spec.md) | **Package-hosted HTTP routes and webhooks** — the three-layer design that lets any package serve REST alongside the switchboard API, and the token-addressed webhook preset on top. *Implemented, awaiting release* |
+
+Also: [`09-spike-activepieces-loader.md`](./09-spike-activepieces-loader.md) — a
+self-contained spike instruction de-risking the Path B piece loader (doc 6
+§2.4/§6). Numbered 09 alongside the secrets spec; not a step in the reading
+order.
 
 Original input: [`20260828-briefing.md`](./20260828-briefing.md).
 
