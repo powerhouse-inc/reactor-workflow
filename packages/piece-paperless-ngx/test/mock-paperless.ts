@@ -28,6 +28,7 @@ export interface MockTask {
   id: number;
   task_id: string;
   task_type: string;
+  trigger_source: string;
   status: "pending" | "started" | "success" | "failure" | "revoked";
   result?: string | null;
   related_document_ids: number[];
@@ -185,6 +186,7 @@ export class MockPaperless {
       id: this.allocateId(),
       task_id: partial.task_id ?? randomUUID(),
       task_type: "consume_file",
+      trigger_source: "api_upload",
       status: "pending",
       related_document_ids: [],
       date_created: new Date("2026-09-01T10:00:00Z").toISOString(),
@@ -338,9 +340,31 @@ export class MockPaperless {
 
     if (path === "/tasks/" && method === "GET") {
       const taskId = request.query.task_id?.[0];
-      const rows = [...this.tasks.values()].filter(
-        (task) => taskId === undefined || task.task_id === taskId,
-      );
+      const taskType = request.query.task_type?.[0];
+      const triggerSource = request.query.trigger_source?.[0];
+      // PaperlessTaskFilterSet.filter_name matches input_data__filename
+      // *icontains*, which is why the client re-checks the name exactly.
+      const nameLike = request.query.name?.[0];
+      const createdAfter = request.query.date_created_after?.[0];
+      const rows = [...this.tasks.values()].filter((task) => {
+        if (taskId !== undefined && task.task_id !== taskId) return false;
+        if (taskType !== undefined && task.task_type !== taskType) return false;
+        if (triggerSource !== undefined && task.trigger_source !== triggerSource) {
+          return false;
+        }
+        if (
+          nameLike !== undefined &&
+          !(task.input_data?.filename ?? "")
+            .toLowerCase()
+            .includes(nameLike.toLowerCase())
+        ) {
+          return false;
+        }
+        if (createdAfter !== undefined && task.date_created < createdAfter) {
+          return false;
+        }
+        return true;
+      });
       const serialized = rows.map((task) => serializeTask(task, version));
       // v9 does not paginate this endpoint.
       return this.json(

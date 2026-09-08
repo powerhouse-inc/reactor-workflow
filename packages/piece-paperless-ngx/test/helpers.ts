@@ -71,3 +71,20 @@ export function runAction(
     step: { name: "test-step" },
   });
 }
+
+// Polls a condition instead of sleeping a guessed interval: the first request
+// of a run pays undici's cold start, which a fixed delay tends to lose to.
+export async function waitFor<T>(
+  probe: () => T | undefined,
+  { timeoutMs = 2000, everyMs = 5 }: { timeoutMs?: number; everyMs?: number } = {},
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const value = probe();
+    if (value !== undefined) return value;
+    if (Date.now() > deadline) {
+      throw new Error("waitFor timed out");
+    }
+    await new Promise((resolve) => setTimeout(resolve, everyMs));
+  }
+}
