@@ -1,9 +1,5 @@
 packages:
   - "packages/*"
-
-# Local link to the monorepo worktree carrying the core HTTP route service.
-overrides:
-  "@powerhousedao/reactor-api": "link:/Users/acaldas/dev/powerhouse/_worktrees/core-http-routes/packages/reactor-api"
 allowBuilds:
   '@apollo/protobufjs': false
   '@datadog/pprof': false
