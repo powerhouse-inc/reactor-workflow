@@ -3,14 +3,14 @@
   "version": "0.1.0",
   "description": "Activepieces piece for paperless-ngx: upload, search, tag and react to documents in a self-hosted archive.",
   "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "types": "dist/src/index.d.ts",
   "files": [
     "dist"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node scripts/bundle.mjs",
     "bundle": "node scripts/bundle.mjs",
-    "test": "vitest run --silent=false",
+    "test": "pnpm run build && vitest run",
     "test:watch": "vitest",
     "lint": "oxlint --type-aware --type-check",
     "lint:fix": "oxlint --type-aware --type-check --fix",
@@ -30,6 +30,7 @@
     "@activepieces/shared": "0.95.1"
   },
   "devDependencies": {
+    "@powerhousedao/reactor-connectors": "workspace:*",
     "@types/node": "^24.13.3",
     "esbuild": "0.25.12",
     "oxlint": "1.70.0",

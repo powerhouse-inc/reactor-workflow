@@ -21,6 +21,9 @@ importers:
         specifier: 0.95.1
         version: 0.95.1(bufferutil@4.1.0)(utf-8-validate@5.0.10)
     devDependencies:
+      '@powerhousedao/reactor-connectors':
+        specifier: workspace:*
+        version: link:../reactor-connectors
       '@types/node':
         specifier: ^24.13.3
         version: 24.13.3

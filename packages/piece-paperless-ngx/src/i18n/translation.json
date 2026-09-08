@@ -1,0 +1,23 @@
+{
+  "Paperless-ngx": "Paperless-ngx",
+  "Upload document": "Upload document",
+  "Get document": "Get document",
+  "Get document file": "Get document file",
+  "Search documents": "Search documents",
+  "Update document": "Update document",
+  "Bulk edit documents": "Bulk edit documents",
+  "Find or create object": "Find or create object",
+  "Get task": "Get task",
+  "Custom API call": "Custom API call",
+  "New document": "New document",
+  "Document updated": "Document updated",
+  "Base URL": "Base URL",
+  "API Token": "API Token",
+  "Document ID": "Document ID",
+  "Include OCR text": "Include OCR text",
+  "Tags": "Tags",
+  "Correspondent": "Correspondent",
+  "Document type": "Document type",
+  "Storage path": "Storage path",
+  "Custom field": "Custom field"
+}

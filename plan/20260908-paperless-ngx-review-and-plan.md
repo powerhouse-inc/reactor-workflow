@@ -1,6 +1,6 @@
 # Paperless-ngx Piece — Review Findings and Implementation Plan
 
-**Date:** 2026-09-08 · **Status:** verified, ready to implement
+**Date:** 2026-09-08 · **Status:** implemented (P0–P5 in code; publish, upstream PR and live e2e outstanding)
 **Amends:** [`20260908-paperless-ngx-piece-design.md`](./20260908-paperless-ngx-piece-design.md) — read that
 for the design; this document records where verification changed it, and the task order that follows.
 
@@ -250,7 +250,28 @@ one document; no payload → cursor sweep).
 
 ---
 
-## 4. Still open
+## 4. What was built, and where it deviated
+
+All sixteen tasks landed except the ones that need something outside the repo
+(npm publish, the upstream PR, the manual live e2e). 514 tests pass across the
+three packages; `pnpm -r tsc` and `pnpm -r lint` are clean.
+
+| Deviation | Why |
+|---|---|
+| No `@activepieces/pieces-common`; the client is native `fetch`, and `@activepieces/shared` is a direct dependency for `PieceCategory` | One error path instead of two, deterministic response-header reads for the version negotiation, and no axios FormData behaviour to work around on the multipart upload. Invisible to the host, which loads a bundle either way |
+| `upload_document` adopts a recent consumption task rather than remembering its own | The piece store lives in the worker process and a step timeout *replaces* that worker, so a store-based guard cannot survive the case it exists for. Confirmed necessary: `pre_check_duplicate` only rejects a duplicate when `PAPERLESS_CONSUMER_DELETE_DUPLICATES` is set, and it is not by default — paperless consumes the second copy |
+| Trigger sources are `sources`, not `filter_source` | `WorkflowTriggerSerializer` exposes `sources` as a `MultipleChoiceField`; the design doc had the wrong field name |
+| A webhook trigger keeps a slow poll (15 min) instead of none | That poll *is* C1's reconciliation sweep. Same `run` hook, no payload |
+| The delivery token rides in the `webhookUrl` fragment | Keeps AP's "the webhook URL is the credential" convention while getting the token into a header on the wire; a fragment is never sent |
+| Attachment reads are authorized against the workflow document, carried on an `AsyncLocalStorage` run scope | `IAttachmentClient.download` needs a document id, and the block executor is shared across concurrent runs, so the scope cannot live on the executor |
+| One file cap (`PH_PIECE_MAX_FILE_BYTES`, 8 MiB) on every `toApFile` branch | C9. The 25 MB write cap in the design would have let a piece emit a file the inbound path refuses |
+
+Not built, and deliberately: `outputSchema` field lists, the npm publish, the
+upstream `community/paperless-ngx` PR, and the docker-compose live e2e. The
+piece's `i18n/translation.json` exists for the upstream path — 0.32.0 has no
+`i18n` parameter on `createAction`.
+
+## 5. Still open
 
 - **Reconciliation interval** for webhook triggers: 15 min is the proposed default. Cheap, and it bounds
   worst-case loss; a user who trusts their network can raise it.
