@@ -108,12 +108,16 @@ Only the `*_content` fields requested via `to_formats` are populated. Multiple s
 failure:{category, message, retryable, phase}}`; `GET /v1/result/{id}` returns the inline shape
 above or a `TaskFailureResult`.
 
-**Auth & deployment:** API key is **optional** — with `DOCLING_SERVE_API_KEY` unset the server
-accepts everything; when set, every request needs header `X-Api-Key` (401 otherwise). Default
-bind `0.0.0.0:5001`; Docker images `quay.io/docling-project/docling-serve` (GPU) and
-`ghcr.io/docling-project/docling-serve-cpu`. **Docling for IBM watsonx** (GA 2026-06, ~$4/1000
-pages) is the *same REST API* behind a service URL + key — a docling-serve client with a
-configurable base URL covers both.
+**Auth & deployment:** API key is **optional** — with `DOCLING_SERVE_API_KEY` unset the
+server accepts everything; when set, the **`/v1/*` routes** require the header `X-Api-Key`
+(401 otherwise). The root-level diagnostics — `/health`, `/version`, `/ready`, `/metrics` —
+stay open either way (verified on v1.32.0), so connection validation must probe a gated
+route to check the key (the piece's `validate`/`checkConnection` do this via
+`GET /v1/status/poll/connection-check`: 401 = rejected, 404 = accepted). Default bind
+`0.0.0.0:5001`; Docker images `quay.io/docling-project/docling-serve` (GPU) and
+`ghcr.io/docling-project/docling-serve-cpu` (CPU). **Docling for IBM watsonx** (GA 2026-06,
+~$4/1000 pages) is the *same REST API* behind a service URL + key — a docling-serve client
+with a configurable base URL covers both.
 
 **Limits (deployment defaults, env-overridable):** `max_sync_wait` **120 s** — sync endpoints
 return **504** beyond it (the job may keep running server-side, but the task id is not returned);
@@ -125,8 +129,22 @@ up to 7 days; Ray-engine queue rejection surfaces as 429/503 with `RedisBackpres
   `ocr_engine`). The v1 code and `docs/v1_migration.md` are authoritative.
 - `json_content` is a docling-core `DoclingDocument` (schema-versioned); older readers should send
   `Accept-Docling-Document-Version`.
-- Stock images ship only layout + table-structure models; OCR/VLM/enrichment require
-  `docling-tools models download` (no auto-download).
+- The v1.32.0 CPU image pre-downloads the layout, table-structure **and** OCR
+  (RapidOCR, PP-OCRv6 ONNX) models into `artifacts_path`; the jobkit logs
+  "No model weights will be downloaded at runtime" while that directory is
+  populated — so `do_ocr: true` works out of the box there (verified: a
+  raster scan was OCR-read). VLM/enrichment remain opt-in and are not
+  bundled; the `DOCLING_SERVE_ALLOW_*_CONFIG` env vars gate them.
+- **URL sources pass an SSRF gate** (`_is_safe_url` in docling-core): only
+  globally routable hosts are accepted — loopback, private, link-local and
+  reserved ranges are rejected with "URL is not allowed", and every redirect
+  target is re-validated the same way. A self-hosted server therefore cannot
+  fetch from localhost or a LAN host; `convert_url` is only useful for
+  public URLs.
+- **DocTags is `<doctag>`-rooted**, not `<docling>`: the serializer emits
+  `<doctag>` around content tokens such as `<section_header_level_N>`,
+  `<paragraph>`, `<text>`, `<table>` and `<loc_*>` position markers
+  (500×500-normalized), one `<loc_…>` run per positioned item.
 
 ### 2.2 Activepieces piece framework — version status (verified 2026-09-08)
 
