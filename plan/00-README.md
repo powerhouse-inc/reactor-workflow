@@ -16,6 +16,16 @@ Read in order:
 | 7 | [`07-domain-providers-spec.md`](./07-domain-providers-spec.md) | **Value domains** — a document-model-layer feature unifying **scalars** (shippable as a new module kind) and **domain providers** under one contract with three reaches, plus how an impure check coexists with portable, verifiable documents (attestation). Questions Q26–Q31 |
 | 8 | [`08-workflow-automation-spec.md`](./08-workflow-automation-spec.md) | **The feature specification, rewritten** as an Activepieces-compatible runtime. **Supersedes doc 2.** |
 
+First-party piece design docs (prepared 2026-09-08, from the live
+service checkouts — read after doc 8):
+
+| # | Document | What it gives you |
+|---|---|---|
+| 9 | [`20260908-docling-piece-design.md`](./20260908-docling-piece-design.md) | The docling-serve v1 piece: API surface (route-level key gating, `files`/`options`/`convert_options` contract, SSRF gate), the six actions, sync/async job model, error taxonomy, and the v1.32.0 live-QA findings |
+| 10 | [`20260908-docling-piece-plan.md`](./20260908-docling-piece-plan.md) | The docling piece implementation plan (P0–P4) |
+| 11 | [`20260908-paperless-ngx-piece-design.md`](./20260908-paperless-ngx-piece-design.md) | The paperless-ngx piece: the 2.18 split API (`post_document` upload, `download/?original=true`, no `status` field, version-9 negotiation), webhook triggers, and the action set |
+| 12 | [`20260908-paperless-ngx-review-and-plan.md`](./20260908-paperless-ngx-review-and-plan.md) | The paperless piece review findings and implementation plan |
+
 Original input: [`20260828-briefing.md`](./20260828-briefing.md).
 
 ---

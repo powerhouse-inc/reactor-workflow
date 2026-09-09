@@ -98,6 +98,26 @@ pinned npm tarball into `.ph/ap-bundles/` and executed in worker processes
 spawned by the connectors engine. First use of a piece therefore needs
 network access; later runs work from the cache.
 
+## First-party pieces
+
+Two pieces are developed in this repo and published to npm for the
+reactor's piece catalog (the same mechanism the cloud-sourced pieces use):
+
+| Piece | Package | Target service |
+| --- | --- | --- |
+| Paperless-ngx | [`packages/piece-paperless-ngx`](packages/piece-paperless-ngx/README.md) | paperless-ngx 2.18.x (self-hosted) |
+| Docling | [`packages/piece-docling`](packages/piece-docling/README.md) | docling-serve v1.32.0 (self-hosted or watsonx) |
+
+Each package is a standalone Activepieces piece (its own npm tarball,
+its own unit/e2e suites — `pnpm -F <package> test`), and each carries a
+README documenting the exact service API line it was verified against,
+including the version pins and the API oddities that shape the
+implementation.
+
+An end-to-end demo wires the two together — upload a document to
+paperless, a workflow fetches the file and converts it to Markdown with
+docling: see [`demo/README.md`](demo/README.md).
+
 ## Configuration
 
 Environment variables read by the switchboard side:
