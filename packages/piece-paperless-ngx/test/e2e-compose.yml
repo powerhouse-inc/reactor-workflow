@@ -26,7 +26,12 @@ services:
     restart: unless-stopped
 
   webserver:
-    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    # Pinned to 2.18.4: the API line this piece was built and verified
+    # against. In the 2.18 line a POST /api/documents/ is a 405 (that
+    # path is read-only search); uploads go to post_document/. The 3.0
+    # line rewrites the API again, so the pin stays until the piece is
+    # ported.
+    image: ghcr.io/paperless-ngx/paperless-ngx:2.18.4
     network_mode: host
     depends_on:
       - broker
@@ -39,12 +44,10 @@ services:
       PAPERLESS_ADMIN_USER: admin
       PAPERLESS_ADMIN_PASSWORD: paperless-e2e
       PAPERLESS_ADMIN_MAIL: admin@example.com
-      # Required since 3.x; any value works for a throwaway instance.
+      # Any value works for a throwaway instance.
       PAPERLESS_SECRET_KEY: e2e-only-not-a-real-secret
       # The delivery target is loopback, which counts as internal.
       PAPERLESS_WEBHOOKS_ALLOW_INTERNAL_REQUESTS: "true"
-      PAPERLESS_TASK_WORKERS: "1"
-      PAPERLESS_THREADS_PER_WORKER: "1"
     volumes:
       # Named (not the image's anonymous volumes) so a recreation by the
       # neighbouring project can never resurrect another stack's database.
@@ -52,6 +55,16 @@ services:
       - paperless-e2e-media:/usr/src/paperless/media
       - paperless-e2e-consume:/usr/src/paperless/consume
       - paperless-e2e-export:/usr/src/paperless/export
+      # The image feeds its s6-rc services the container env via
+      # with-contenv; when that materialization comes up empty Django
+      # boots with defaults and token auth breaks. Mount the same
+      # values as s6-rc `environment` files (see demo/paperless.env
+      # for the full account of it).
+      - ./paperless-e2e.env:/etc/s6-overlay/s6-rc.d/svc-webserver/environment
+      - ./paperless-e2e.env:/etc/s6-overlay/s6-rc.d/svc-consumer/environment
+      - ./paperless-e2e.env:/etc/s6-overlay/s6-rc.d/svc-worker/environment
+      - ./paperless-e2e.env:/etc/s6-overlay/s6-rc.d/svc-scheduler/environment
+      - ./paperless-e2e.env:/etc/s6-overlay/s6-rc.d/svc-flower/environment
 
 volumes:
   paperless-e2e-data:
