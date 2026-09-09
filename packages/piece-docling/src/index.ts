@@ -1,4 +1,4 @@
-import { createPiece, PieceAuth } from "@activepieces/pieces-framework";
+import { createPiece } from "@activepieces/pieces-framework";
 import { PieceCategory } from "@activepieces/shared";
 import { doclingAuth, authFromCtx, authKeyHeaders } from "./lib/auth.js";
 import { DoclingError } from "./lib/errors.js";
@@ -86,10 +86,6 @@ docling.checkConnection = async (ctx: unknown) => {
    // typed through the widened declaration above rather than the brief's
    // `as never` (a block-bodied arrow cannot take an `as` suffix; the
    // esbuild bundle step rejects it). The reactor's loader duck-types it.
-
-// The `PieceAuth` import above is used only to keep tooling happy if the
-// stub ever needs PieceAuth.None(); remove if unused.
-void PieceAuth;
 
 export { docling };
 export default docling;

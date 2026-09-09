@@ -130,8 +130,8 @@ async function send<T>(
   }
 }
 
-// 429/503 retry wrapper: honors Retry-After, exponential backoff capped at
-// 15 s, at most `retries` attempts. Only OVERLOADED errors retry.
+// 429/503 retry wrapper: plain exponential backoff capped at 15 s, at most
+// `retries` attempts; only OVERLOADED retries. (Honoring Retry-After: v1.1.)
 async function withBackoff<T>(fn: () => Promise<T>, retries = 5): Promise<T> {
   let attempt = 0;
   for (;;) {
