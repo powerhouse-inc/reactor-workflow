@@ -82,6 +82,11 @@ import {
   type WebhookPayload,
 } from "./webhook.js";
 import {
+  handshakeMatches,
+  handshakeReply,
+  type PieceHandshake,
+} from "./piece-handshake.js";
+import {
   lifecycleKindForDocumentAction,
   lifecycleKindForDriveAction,
   matchesEventFilter,
@@ -1100,12 +1105,65 @@ export class WorkflowRuntimeService {
     };
   }
 
-  // The piece owns verification and parsing, so there is no scheme to check
-  // here: its run hook decides what the request means, or rejects it.
-  private deliverToPiece(
+  // The probe a sender sends before it will register the endpoint. Answered by
+  // the piece: only its own code knows what the sender wants echoed back.
+  private async pieceHandshake(
     binding: PieceTriggerBinding,
     request: WebhookRequest,
-  ): WebhookReply {
+  ): Promise<WebhookReply | undefined> {
+    const handshake = await this.pieceHandshakeConfig(binding);
+    if (!handshake || !handshakeMatches(handshake, request)) return undefined;
+    try {
+      const result = await this.supervisor().handshake(
+        binding,
+        webhookPayload(request),
+      );
+      return handshakeReply(result.output);
+    } catch (error) {
+      // A failed probe is the sender's answer, so it must not look like a
+      // delivery: 500 tells it to retry rather than that the endpoint is gone.
+      logger.error(
+        "Handshake failed for @block on workflow @workflow",
+        binding.blockType,
+        binding.workflowId,
+        error,
+      );
+      return { status: 500 };
+    }
+  }
+
+  private async pieceHandshakeConfig(
+    binding: PieceTriggerBinding,
+  ): Promise<PieceHandshake | undefined> {
+    try {
+      const descriptor = await this.pieceDescriptor(
+        binding.packageName,
+        binding.version,
+      );
+      return descriptor.triggers.find(
+        (entry) => entry.name === binding.triggerName,
+      )?.handshake;
+    } catch (error) {
+      // A delivery must not fail because the descriptor could not be read; the
+      // cost of guessing wrong is one probe answered as a delivery.
+      logger.warn(
+        "Could not read the handshake config for @block",
+        binding.blockType,
+        error,
+      );
+      return undefined;
+    }
+  }
+
+  // The piece owns verification and parsing, so there is no scheme to check
+  // here: its run hook decides what the request means, or rejects it.
+  private async deliverToPiece(
+    binding: PieceTriggerBinding,
+    request: WebhookRequest,
+  ): Promise<WebhookReply> {
+    const probe = await this.pieceHandshake(binding, request);
+    if (probe) return probe;
+
     const payload = webhookPayload(request);
     // Answered before the hook runs, as Activepieces does: a provider must not
     // wait on piece code, and its retry would only duplicate the delivery.

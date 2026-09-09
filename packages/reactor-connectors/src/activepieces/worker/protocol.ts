@@ -1,9 +1,6 @@
 import type { ActionContextIdentity } from "../context/action.js";
 import type { ServerInfo } from "../context/props.js";
-import type {
-  RecordedListener,
-  RecordedSchedule,
-} from "../context/trigger.js";
+import type { RecordedListener, RecordedSchedule } from "../context/trigger.js";
 
 export interface RunActionRequest {
   bundleDir: string;
@@ -47,7 +44,7 @@ export interface ResolveOptionsMessage {
 export interface TriggerHookRequest {
   bundleDir: string;
   triggerName: string;
-  hook: "onEnable" | "onDisable" | "run" | "test";
+  hook: "onEnable" | "onDisable" | "run" | "test" | "onHandshake";
   propsValue: Record<string, unknown>;
   auth?: unknown;
   storeState?: Record<string, unknown>;

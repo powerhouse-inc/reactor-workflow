@@ -175,6 +175,28 @@ export class TriggerSupervisor {
     });
   }
 
+  // The sender's probe, answered by the piece rather than by us: only its own
+  // code knows what the sender wants echoed back.
+
+  // Serialised with enable/disable like a delivery, so a probe arriving during
+  // a re-registration cannot read a half-written store.
+  handshake(
+    binding: PieceTriggerBinding,
+    payload: unknown,
+  ): Promise<PieceWorkerResult> {
+    return this.enqueue(async () => {
+      const row = await (
+        await this.options.store()
+      )?.getTriggerState(binding.workflowId);
+      return this.hook(
+        binding,
+        "onHandshake",
+        row ? parseStoreState(row) : {},
+        { payload },
+      );
+    });
+  }
+
   // A poll binding gets an unroutable URL on purpose: nothing serves it, and
   // a live one would let a piece register an endpoint that never fires.
   private async webhookUrl(binding: PieceTriggerBinding): Promise<string> {
