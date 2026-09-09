@@ -23,7 +23,7 @@ import { searchDocuments } from "../src/lib/actions/search-documents";
 import { updateDocument } from "../src/lib/actions/update-document";
 import { uploadDocument } from "../src/lib/actions/upload-document";
 import { checkPaperlessConnection } from "../src/lib/auth";
-import { newDocument } from "../src/lib/triggers/document-trigger";
+import { documentUpdated, newDocument } from "../src/lib/triggers/document-trigger";
 import { MemoryStore, RecordingFiles, runAction, runHook } from "./helpers";
 
 const baseUrl = process.env.PAPERLESS_E2E_URL;
@@ -538,6 +538,144 @@ describe.skipIf(!baseUrl)("live paperless-ngx", () => {
       ) as { workflow_id: number };
 
       await runHook(newDocument, "onDisable", { auth, store });
+
+      const listed = (await runAction(customApiCall, {
+        auth,
+        props: { method: "GET", path: "workflows/" },
+      })) as { body: { results: { id: number }[] } };
+      expect(
+        listed.body.results.some((row) => row.id === registration.workflow_id),
+      ).toBe(false);
+      expect(store.entries.get("paperless:webhook-registration")).toBeNull();
+    }, 120_000);
+  });
+
+  describe("documentUpdated trigger against paperless's own workflow engine", () => {
+    const store = new MemoryStore();
+    const token = `e2e-update-token-${stamp}`;
+
+    it("registers its own workflow with the updated trigger type", async () => {
+      await runHook(documentUpdated, "onEnable", {
+        auth,
+        store,
+        webhookUrl: `${listenerUrl}#${token}`,
+        props: {},
+      });
+
+      const registration = store.entries.get(
+        "paperless:webhook-registration",
+      ) as { workflow_id: number };
+      expect(typeof registration.workflow_id).toBe("number");
+
+      // Distinct from the newDocument workflow: its own row, trigger type 3,
+      // and the updated event baked into the query it will POST.
+      const listed = (await runAction(customApiCall, {
+        auth,
+        props: { method: "GET", path: "workflows/" },
+      })) as {
+        body: {
+          results: {
+            id: number;
+            name: string;
+            triggers: { type: number }[];
+            actions: {
+              type: number;
+              webhook: {
+                params?: { query?: string };
+                headers?: Record<string, unknown>;
+              };
+            }[];
+          }[];
+        };
+      };
+      const mine = listed.body.results.find(
+        (row) => row.id === registration.workflow_id,
+      );
+      expect(mine?.triggers[0].type).toBe(3);
+      expect(mine?.actions[0].type).toBe(4);
+      const webhook = mine?.actions[0]?.webhook;
+      expect(webhook?.params?.query).toContain('event: "DOCUMENT_UPDATED"');
+      expect(webhook?.headers).toMatchObject({
+        "X-Powerhouse-Webhook-Token": token,
+      });
+    }, 120_000);
+
+    it("fires when the document is edited through the API", async () => {
+      deliveries = [];
+
+      await runAction(updateDocument, {
+        auth,
+        props: { id: documentId, title: `E2E Invoice ${stamp} (edited)` },
+      });
+
+      // The Delivery body is untyped JSON; only a delivery carrying the
+      // updated event's query is the one this block waits for.
+      const queryOf = (body: unknown): string => {
+        if (typeof body === "object" && body !== null && "query" in body) {
+          return String(body.query);
+        }
+        return "";
+      };
+
+      const delivery = await waitFor(
+        async () =>
+          deliveries.find((candidate) =>
+            queryOf(candidate.body).includes(`docId: ${documentId}`),
+          ),
+        "paperless to POST the update webhook",
+        120_000,
+      );
+
+      expect(delivery.token).toBe(token);
+      // The use_params + as_json combination: the query crosses as a JSON object.
+      const query = (delivery.body as { query: string }).query;
+      expect(query).toContain('event: "DOCUMENT_UPDATED"');
+      expect(query).not.toContain("{{");
+
+      // The delivery's payload hydrated through the trigger, shaped exactly
+      // as the webhook path shapes it.
+      const items = (await runHook(documentUpdated, "run", {
+        auth,
+        store,
+        payload: { docId: documentId, event: "DOCUMENT_UPDATED" },
+      })) as Record<string, unknown>[];
+      expect(items).toHaveLength(1);
+      expect(items[0].id).toBe(documentId);
+      expect(items[0].event).toBe("DOCUMENT_UPDATED");
+      expect(String(items[0]._dedupe_key)).toMatch(
+        new RegExp(`^${documentId}:DOCUMENT_UPDATED:.+`),
+      );
+    }, 180_000);
+
+    it("recovers missed updates through the modified-cursor sweep", async () => {
+      // Both triggers share one cursor key; this block's store is its own, so
+      // seeding epoch 0 asks for every document's latest modification.
+      await store.put("paperless:sweep-cursor", new Date(0).toISOString());
+
+      const items = (await runHook(documentUpdated, "run", {
+        auth,
+        store,
+      })) as Record<string, unknown>[];
+      expect(items.length).toBeGreaterThan(0);
+      expect(
+        items.every((item) => item.event === "DOCUMENT_UPDATED"),
+      ).toBe(true);
+      expect(items.some((item) => item.id === documentId)).toBe(true);
+
+      // The cursor advanced to the newest modified, so the next sweep is quiet.
+      const again = (await runHook(documentUpdated, "run", {
+        auth,
+        store,
+      })) as unknown[];
+      expect(again).toEqual([]);
+    }, 120_000);
+
+    it("removes the workflow, the action and the trigger on disable", async () => {
+      const registration = store.entries.get(
+        "paperless:webhook-registration",
+      ) as { workflow_id: number };
+
+      await runHook(documentUpdated, "onDisable", { auth, store });
 
       const listed = (await runAction(customApiCall, {
         auth,
