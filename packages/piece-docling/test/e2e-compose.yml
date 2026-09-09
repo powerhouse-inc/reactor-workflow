@@ -1,0 +1,23 @@
+# Live e2e stack for the docling piece: one pinned docling-serve v1.32.0
+# (the release the design doc targets). The stock CPU image bundles the
+# layout, table-structure and OCR (RapidOCR) models, so the suite can run
+# the default ocr setting. The API key is set so the key-gated /v1/* paths
+# (401 with a bad key) are testable; /health and /version stay open even
+# with a bad key (v1 gates only /v1/*).
+#
+#   docker compose -f test/e2e-compose.yml up -d
+#   DOCLING_E2E_URL=http://localhost:5001 \
+#   DOCLING_E2E_API_KEY=docling-e2e-key \
+#   pnpm vitest run test/e2e.test.ts
+#
+# The first conversion loads the layout model, so the suite's beforeAll
+# allows several minutes for readiness.
+name: docling-e2e
+
+services:
+  docling:
+    image: ghcr.io/docling-project/docling-serve-cpu:v1.32.0
+    ports:
+      - "5001:5001"
+    environment:
+      DOCLING_SERVE_API_KEY: docling-e2e-key
