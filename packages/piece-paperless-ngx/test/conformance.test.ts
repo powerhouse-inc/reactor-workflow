@@ -2,7 +2,7 @@
 // artifact has to load through the reactor's own duck-typed loader, describe
 // into a connector descriptor, and execute an action inside the forked worker
 // — that, not our esbuild config, is the definition of a valid bundle.
-import { copyFile, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -13,7 +13,10 @@ import type { MockPaperless } from "./mock-paperless";
 import { startMockPaperless } from "./mock-paperless";
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const bundleFile = join(packageRoot, "dist", "index.js");
+// `dist/` is the tarball root, so the gate loads exactly what npm would ship —
+// the emitted package.json included, rather than one written here to suit.
+const distDir = join(packageRoot, "dist");
+const bundleFile = join(distDir, "src", "index.js");
 
 // The reactor's loader and worker live in the connectors package; a workspace
 // that has not built it yet skips rather than fails.
@@ -29,23 +32,27 @@ const ready = connectors !== undefined && existsSync(bundleFile);
 
 let cacheDir = "";
 let bundleDir = "";
+let published: {
+  name: string;
+  version: string;
+  main: string;
+  dependencies: Record<string, string>;
+  license?: string;
+};
 let mock: MockPaperless;
 
 describe.skipIf(!ready)("bundle conformance", () => {
   beforeAll(async () => {
+    published = JSON.parse(
+      await readFile(join(distDir, "package.json"), "utf8"),
+    ) as typeof published;
     cacheDir = await mkdtemp(join(tmpdir(), "paperless-conformance-"));
     // The layout ensurePieceBundle resolves: <cacheDir>/<name>-<version>.
-    bundleDir = join(cacheDir, "@powerhousedao-piece-paperless-ngx-0.1.0");
-    await mkdir(bundleDir, { recursive: true });
-    await writeFile(
-      join(bundleDir, "package.json"),
-      JSON.stringify({
-        name: "@powerhousedao/piece-paperless-ngx",
-        version: "0.1.0",
-        main: "index.js",
-      }),
+    bundleDir = join(
+      cacheDir,
+      `${published.name.replace("/", "-")}-${published.version}`,
     );
-    await copyFile(bundleFile, join(bundleDir, "index.js"));
+    await cp(distDir, bundleDir, { recursive: true });
     mock = await startMockPaperless();
   }, 60_000);
 
@@ -65,8 +72,8 @@ describe.skipIf(!ready)("bundle conformance", () => {
   it("describes into a connector descriptor with real props and pickers", async () => {
     const { piece } = await connectors!.loadPieceFromDir(bundleDir);
     const descriptor = connectors!.buildDescriptor(piece, {
-      packageName: "@powerhousedao/piece-paperless-ngx",
-      version: "0.1.0",
+      packageName: published.name,
+      version: published.version,
     });
 
     expect(descriptor.actions.map((action) => action.name).sort()).toEqual([
@@ -103,6 +110,22 @@ describe.skipIf(!ready)("bundle conformance", () => {
     expect(
       bulk?.props.find((prop) => prop.name === "parameters")?.type,
     ).toBe("DYNAMIC");
+  });
+
+  it("ships a publishable tarball: no deps, and the i18n data file", async () => {
+    // `npm publish ./dist` reads the emitted manifest, not the workspace one.
+    expect(published.name).toBe("@powerhousedao/piece-paperless-ngx");
+    expect(published.main).toBe("./src/index.js");
+    // Nothing may be left to install: the loader unpacks the tarball alone.
+    expect(published.dependencies).toEqual({});
+    expect(published.license).toBe("AGPL-3.0-only");
+
+    // The UI reads translations out of the bundle; esbuild cannot see the file
+    // from the entry point, so only the copy step puts it in the tarball.
+    const i18n = JSON.parse(
+      await readFile(join(bundleDir, "src", "i18n", "translation.json"), "utf8"),
+    ) as Record<string, string>;
+    expect(i18n["Paperless-ngx"]).toBe("Paperless-ngx");
   });
 
   it("produces metadata in the shape the catalog serves", async () => {
