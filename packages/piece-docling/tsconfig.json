@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.options.json",
+  "compilerOptions": {
+    "outDir": "./.tsbuild",
+    // The "source" condition in tsconfig.options.json exists for
+    // @powerhousedao/* workspace resolution; it must not leak into
+    // third-party deps that publish a "source" condition (e.g.
+    // eventsource-parser) or tsc pulls their .ts sources into the
+    // program (TS5097).
+    "customConditions": [],
+    "types": ["vitest/globals"]
+  },
+  "include": ["**/*"],
+  "exclude": ["dist", "node_modules", ".tsbuild"]
+}
