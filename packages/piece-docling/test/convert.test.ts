@@ -28,6 +28,12 @@ describe("convert_file", () => {
       expect(out.status).toBe("success");
       expect(out.document.md_content).toBe(MOCK_MD);
       expect(JSON.parse(mock.requestBodies[0])).toMatchObject({ sources: [{ kind: "file", base64_string: "eA==", filename: "a.pdf" }] });
+      // The convert endpoint takes settings under options (chunk uses
+      // convert_options); pin the key so a swap is caught. The quotes
+      // keep the two checks mutually exclusive on the raw wire body.
+      const convRaw = mock.requestBodies[0];
+      expect(convRaw).toContain('"options"');
+      expect(convRaw).not.toContain('"convert_options"');
     } finally { await mock.close(); }
   });
 

@@ -119,6 +119,7 @@ export async function startMockDocling(opts: MockDoclingOptions = {}): Promise<M
     let body: {
       sources?: Array<{ kind?: string; base64_string?: string; filename?: string; url?: string }>;
       options?: { to_formats?: string[] };
+      convert_options?: { to_formats?: string[] };
     } = {};
     if (req.method === "POST") {
       try {
@@ -152,7 +153,11 @@ export async function startMockDocling(opts: MockDoclingOptions = {}): Promise<M
         polls: 0,
         failing: (opts.failJobs ?? []).includes(sources[0]?.filename ?? ""),
         filename: String(filename).split("/").pop() ?? "doc",
-        formats: body.options?.to_formats ?? ["md"],
+        // The real server's chunk request model names the conversion
+        // settings `convert_options` (pydantic silently ignores the
+        // convert key `options`); the mock mirrors that so a body-key
+        // regression surfaces instead of being swallowed.
+        formats: (p.startsWith("/v1/chunk") ? body.convert_options?.to_formats : body.options?.to_formats) ?? ["md"],
         kind: p.startsWith("/v1/chunk") ? "chunk" : "convert",
       });
       return json(res, 200, {

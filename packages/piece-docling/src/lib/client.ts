@@ -159,11 +159,13 @@ export async function submitJob(args: {
   chunker?: "hybrid" | "hierarchical";
 }): Promise<TaskStatusResponse> {
   const path = args.path ?? "convert";
-  const body = {
-    sources: sourceBody(args.source),
-    options: args.options,
-    target: { kind: "inbody" },
-  };
+  const body = path === "chunk"
+    ? // The chunk request model (BaseChunkDocumentsRequest) names the
+      // conversion settings `convert_options`; the convert endpoints use
+      // `options`. The wrong key is silently ignored by the server (the
+      // conversion settings would fall back to its defaults).
+      { sources: sourceBody(args.source), convert_options: args.options, target: { kind: "inbody" } }
+    : { sources: sourceBody(args.source), options: args.options, target: { kind: "inbody" } };
   const res = await withBackoff(() =>
     send<TaskStatusResponse>(
       HttpMethod.POST,
@@ -260,7 +262,9 @@ function runSync(args: RunConversionArgs): Promise<ConvertDocumentResponse | Chu
     send<ConvertDocumentResponse | ChunkResult>(
       HttpMethod.POST,
       url(args.auth, endpointPath(args, false)),
-      { sources: sourceBody(args.source), options: args.options, target: { kind: "inbody" } },
+      args.path === "chunk"
+        ? { sources: sourceBody(args.source), convert_options: args.options, target: { kind: "inbody" } }
+        : { sources: sourceBody(args.source), options: args.options, target: { kind: "inbody" } },
       args.auth.apiKey,
       args.timeoutMs,
     ).then((res) => {

@@ -71,11 +71,23 @@ schemas in `docling-project/docling` under `docling/datamodel/service/*`.
 `a client wanting JSON must ask), `from_formats` (all by default), `do_ocr` (default true),`
 `force_ocr`, `ocr_preset` (`auto|easyocr|tesseract`), `ocr_lang`, `table_mode` (`fast|accurate`,
 default `accurate`), `do_table_structure` (default true), `page_range` (**1-based `[start,end]`** —
-the v1 way to cap pages; there is no per-request `max_pages`), `pdf_backend`
+the v1 way to cap pages; there is no per-request `max_pages`; the piece exposes it as a
+ShortText `start[-end]` builder field parsed to the tuple at runtime — `"5"` = that page only,
+`"5-"` = to the last page), `pdf_backend`
 (`pypdfium2|docling_parse|threaded_docling_parse`, default `threaded_docling_parse`),
 `image_export_mode` (`placeholder|embedded|referenced`, default `placeholder`), `pipeline`
 (`legacy|standard|native|vlm|asr`, default `standard`), enrichment flags (formula, code, picture
 classification/description, charts), `document_timeout`, `abort_on_error`.
+
+**Chunk request (`/v1/chunk/{hybrid|hierarchical}/source[/async]` JSON):** the chunk request
+model (`BaseChunkDocumentsRequest`) names the conversion settings **`convert_options`** — not
+`options`. Pydantic silently ignores the convert key on this route, so sending `options` makes
+the server use its defaults (OCR/table/page-range settings are dropped). Body shape:
+`{ convert_options, sources, chunking_options, include_converted_doc, target, callbacks }`;
+the piece omits `chunking_options` (server defaults per chunker — the chunker is selected by
+the path), `include_converted_doc` (false) and `callbacks`. File input rides the same
+`sources[]` base64 shape (dedicated `/file` multipart routes exist — form fields
+`convert_*`/`chunking_*` — but the JSON path is what the piece uses).
 
 **Response (inline, single doc):**
 
@@ -274,9 +286,10 @@ Shared options block (`src/lib/common/options.ts`) across `convert_file`, `conve
   workflow's own retry policy re-runs it). On completion, fetches `/v1/result/{id}` and returns the
   same shape as the convert actions; on task failure, surfaces `failure.{category, message,
   retryable}` as a typed error.
-- **`chunk`** (`READ`, idempotent): file or url source + `chunker` STATIC_DROPDOWN
-  (`hybrid`/`hierarchical`) + options minus image-mode. POSTs `/v1/chunk/{chunker}/source[/async]`;
-  output `{ chunks: […], processing_time }` — the RAG entry point.
+- **`chunk`** (`READ`, idempotent): file or url source (exactly one — both set is rejected) +
+  `chunker` STATIC_DROPDOWN (`hybrid`/`hierarchical`) + options minus image-mode. POSTs
+  `/v1/chunk/{chunker}/source[/async]` with the conversion settings under `convert_options`
+  (see the chunk request note above); output `{ chunks: […], processing_time }` — the RAG entry point.
 - **`health`** (`READ`, idempotent): no props. `GET /health` + `/version` →
   `{ status, version }`. Usable standalone (e.g. a pre-flight step) and reused by `validate`.
 
