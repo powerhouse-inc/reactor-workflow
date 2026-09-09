@@ -282,9 +282,8 @@ export interface ConnectionCheckResult {
   accountLabel: string | null;
 }
 
-// Runs the piece's own connection check against a document's stored
-// credentials. No secret values cross this boundary: the subgraph
-// resolves refs server-side.
+// Runs the piece's own connection check against a document's stored credentials.
+// No secrets cross this boundary: the subgraph resolves refs server-side.
 export function checkConnection(
   connectionId: string,
 ): Promise<ConnectionCheckResult> {
@@ -357,6 +356,8 @@ export async function fetchSecretStat(ref: string): Promise<SecretStat | null> {
 export interface WebhookEndpointRecord {
   workflowId: string;
   url: string;
+  // False when `url` is a bare path because the reactor has no public origin.
+  absoluteUrl: boolean;
   armed: boolean;
   createdAt: string;
 }
@@ -372,7 +373,7 @@ export async function fetchWebhookEndpoint(
     `query WebhookEndpoint($workflowId: String!) {
       workflowRuntime {
         webhookEndpoint(workflowId: $workflowId) {
-          workflowId url armed createdAt
+          workflowId url absoluteUrl armed createdAt
         }
       }
     }`,

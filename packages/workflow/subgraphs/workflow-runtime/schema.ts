@@ -121,6 +121,11 @@ export const schema: DocumentNode = gql`
   type WebhookEndpointRecord {
     workflowId: String!
     url: String!
+    """
+    False when the reactor does not know its own public origin, so the url
+    above is a bare path no provider can call: the author supplies the origin.
+    """
+    absoluteUrl: Boolean!
     "True while the workflow is ENABLED with a valid webhook trigger"
     armed: Boolean!
     createdAt: String!

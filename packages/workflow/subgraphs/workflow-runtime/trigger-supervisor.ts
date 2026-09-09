@@ -256,8 +256,13 @@ export class TriggerSupervisor {
         consecutive_failures: 0,
       });
       this.enabledOk.add(binding.workflowId);
+      // Positional: a block type starts with `@`, which the logger reads as a
+      // replacement token and would substitute away as "null".
       logger.info(
-        `Enabled ${binding.blockType} for workflow ${binding.workflowId} (${state.cadence})`,
+        "Enabled @block for workflow @workflow (@cadence)",
+        binding.blockType,
+        binding.workflowId,
+        state.cadence,
       );
     } catch (error) {
       this.enabledOk.delete(binding.workflowId);
@@ -275,7 +280,10 @@ export class TriggerSupervisor {
         consecutive_failures: (existing?.consecutive_failures ?? 0) + 1,
       });
       logger.error(
-        `Enabling ${binding.blockType} failed for workflow ${binding.workflowId}: ${message}`,
+        "Enabling @block failed for workflow @workflow: @reason",
+        binding.blockType,
+        binding.workflowId,
+        message,
       );
     }
   }

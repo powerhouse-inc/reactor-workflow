@@ -1,6 +1,11 @@
-// Config parsing for core#webhook. Verification, redaction and the payload
-// mechanics belong to the reactor's webhook service; what is left here is the
-// editor-facing shape of the trigger block.
+// Config parsing for core#webhook: the editor-facing shape of the trigger block.
+// Verification, redaction and payload mechanics belong to the reactor's service.
+import type {
+  WebhookField,
+  WebhookHashAlgorithm,
+  WebhookSignatureEncoding,
+} from "@powerhousedao/reactor-api";
+
 export const WEBHOOK_BLOCK = "core#webhook";
 
 export const WEBHOOK_TRIGGER_KIND = "webhook";
@@ -10,38 +15,41 @@ export const DEFAULT_DEDUPE_TTL_SECONDS = 300;
 export const DEFAULT_RESPONSE_STATUS = 202;
 export const DEFAULT_SYNC_RESPONSE_STATUS = 200;
 
-// What providers actually send: a shared token in a header, a bare hex HMAC,
-// GitHub's "sha256=" prefix, and Stripe's timestamped scheme.
+// Signature layout named by wire format, not by sender; hash and encoding are
+// separate, so no name carries them. Mirrors the reactor's own WebhookScheme.
 export type WebhookScheme =
   | "none"
   | "token"
-  | "hmac-sha256"
-  | "github"
-  | "stripe";
+  | "hmac"
+  | "hmac-prefixed"
+  | "hmac-timestamped";
+
+const ALGORITHMS = new Set<WebhookHashAlgorithm>(["sha1", "sha256", "sha512"]);
+const ENCODINGS = new Set<WebhookSignatureEncoding>(["hex", "base64"]);
 
 // A signed scheme with no secret is a configuration error, not a runtime one.
 const SIGNED_SCHEMES = new Set<WebhookScheme>([
   "token",
-  "hmac-sha256",
-  "github",
-  "stripe",
+  "hmac",
+  "hmac-prefixed",
+  "hmac-timestamped",
 ]);
 
 const SCHEMES = new Set<WebhookScheme>([
   "none",
   "token",
-  "hmac-sha256",
-  "github",
-  "stripe",
+  "hmac",
+  "hmac-prefixed",
+  "hmac-timestamped",
 ]);
 
-// Header each scheme reads when the author does not name one.
+// The header each format is most often carried in; the author can override it.
 const DEFAULT_HEADER: Record<WebhookScheme, string> = {
   none: "",
   token: "x-webhook-token",
-  "hmac-sha256": "x-signature",
-  github: "x-hub-signature-256",
-  stripe: "stripe-signature",
+  hmac: "x-signature",
+  "hmac-prefixed": "x-hub-signature-256",
+  "hmac-timestamped": "stripe-signature",
 };
 
 export const HTTP_METHODS = [
@@ -61,17 +69,24 @@ export interface WebhookConfig {
   header: string;
   // secret://v1: ref resolved through the secret store at delivery time.
   secretRef?: string;
-  // Replay window for schemes carrying a timestamp (stripe).
+  // Replay window for the timestamped scheme.
   toleranceSeconds: number;
+  // Digest options a sender picks independently of the layout; undefined leaves
+  // the reactor's defaults (sha256, hex, algorithm-derived label) in place.
+  algorithm?: WebhookHashAlgorithm;
+  encoding?: WebhookSignatureEncoding;
+  // "" is a real value: a prefixed layout carrying no label at all. Only
+  // undefined means "the algorithm's own label".
+  prefix?: string;
   // async answers before the run; sync waits for it and reports the outcome.
   responseMode: "async" | "sync";
   responseStatus: number;
-  // A query param or body field echoed back verbatim instead of starting a
-  // run; Activepieces spends onHandshake on the same provider round.
-  challengeField?: string;
-  // Body field holding the provider's event id. Present, it is the
-  // authoritative dedup key for redeliveries (plan/08 §7.2).
-  dedupeField?: string;
+  // A field echoed back verbatim instead of starting a run; Activepieces
+  // spends onHandshake on the same provider round.
+  challengeField?: WebhookField;
+  // Where the provider's own event id is. Present, it is the authoritative
+  // dedup key for redeliveries (plan/08 §7.2).
+  dedupeField?: WebhookField;
   dedupeTtlSeconds: number;
 }
 
@@ -102,6 +117,47 @@ function nonEmptyString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() !== ""
     ? value.trim()
     : undefined;
+}
+
+// Where a provider put a value: a bare name is a query param or top-level body field.
+// `header:`/`body:` prefixes exist because senders disagree; object form is accepted too.
+function parseWebhookField(value: unknown): WebhookField | undefined {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    const header = nonEmptyString(record.header);
+    if (header) return { header: header.toLowerCase() };
+    const body = nonEmptyString(record.body);
+    if (body) return { body };
+    throw new Error(
+      `${WEBHOOK_BLOCK}: a field source must name either "header" or "body"`,
+    );
+  }
+  const text = nonEmptyString(value);
+  if (!text) return undefined;
+  // Only these two prefixes are a source. Any other colon is part of the name,
+  // so a provider that uses one in a field name still resolves.
+  const match = /^(header|body)\s*:\s*(\S.*)$/i.exec(text);
+  if (!match) return text;
+  const source = match[1].toLowerCase();
+  const name = match[2].trim();
+  return source === "header" ? { header: name.toLowerCase() } : { body: name };
+}
+
+// A named choice, rejected loudly: an unknown hash would otherwise reach the
+// reactor and fail every delivery with nothing pointing at the config.
+function parseEnum<T extends string>(
+  value: unknown,
+  allowed: Set<T>,
+  field: string,
+): T | undefined {
+  const text = nonEmptyString(value)?.toLowerCase();
+  if (!text) return undefined;
+  if (!allowed.has(text as T)) {
+    throw new Error(
+      `${WEBHOOK_BLOCK}: "${field}" must be one of ${[...allowed].join(", ")}`,
+    );
+  }
+  return text as T;
 }
 
 // "ANY" and "" both mean every method, which is how the editor spells it.
@@ -179,23 +235,17 @@ export function parseWebhookConfig(config: unknown): WebhookConfig {
     toleranceSeconds: tolerance,
     responseMode,
     responseStatus: status,
-    challengeField: nonEmptyString(record.challengeField),
-    dedupeField: nonEmptyString(record.dedupeField),
+    algorithm: parseEnum(record.algorithm, ALGORITHMS, "algorithm"),
+    encoding: parseEnum(record.encoding, ENCODINGS, "encoding"),
+    prefix: typeof record.prefix === "string" ? record.prefix : undefined,
+    challengeField: parseWebhookField(record.challengeField),
+    dedupeField: parseWebhookField(record.dedupeField),
     dedupeTtlSeconds: dedupeTtl,
   };
 }
 
-// The provider's event id, when the author named the field holding it. Only
-// top-level string/number fields qualify; anything else is not an id.
-/**
- * The trigger payload, shaped like Activepieces' catch-webhook contract so
- * authored expressions and adapted pieces agree on where a request's parts are.
- *
- * Everything that used to live below this line — token minting, the four
- * signature schemes, header redaction, body decoding, dedupe keys, the
- * challenge round and the rate limiter — is now the reactor's webhook service.
- * None of it was about workflows.
- */
+/** The trigger payload, shaped like Activepieces' catch-webhook contract so
+ * authored expressions and adapted pieces agree on where a request's parts are. */
 export interface WebhookPayload {
   method: string;
   path: string;
