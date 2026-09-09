@@ -2,6 +2,7 @@ import { createAction, Property } from "@activepieces/pieces-framework";
 import { paperlessAuth } from "../auth";
 import { clientForContext } from "../common/context";
 import { trimContent } from "../common/documents";
+import { getDocumentOutputFields } from "../common/output-schemas";
 
 export const getDocument = createAction({
   auth: paperlessAuth,
@@ -10,6 +11,7 @@ export const getDocument = createAction({
   description: "Fetches one document's metadata by id.",
   audience: "both",
   aiMetadata: { idempotent: true },
+  outputSchema: { fields: getDocumentOutputFields },
   props: {
     id: Property.Number({
       displayName: "Document ID",

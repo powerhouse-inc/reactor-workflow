@@ -4,6 +4,7 @@ import { paperlessAuth } from "../auth";
 import { clientForContext } from "../common/context";
 import { PaperlessApiError } from "../common/errors";
 import type { ObjectKind } from "../common/pickers";
+import { findOrCreateOutputFields } from "../common/output-schemas";
 
 // `name__iexact` is exposed by all five filtersets (CHAR_KWARGS is applied to
 // `name` on Correspondent, Tag, DocumentType, StoragePath and CustomField),
@@ -24,6 +25,7 @@ export const findOrCreateObject = createAction({
     "Resolves a tag, correspondent, document type, storage path or custom field by name, creating it when it does not exist.",
   audience: "both",
   aiMetadata: { idempotent: true },
+  outputSchema: { fields: findOrCreateOutputFields },
   props: {
     object_type: Property.StaticDropdown({
       displayName: "Object type",

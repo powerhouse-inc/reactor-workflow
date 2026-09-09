@@ -1,6 +1,7 @@
 import { createAction, Property } from "@activepieces/pieces-framework";
 import { paperlessAuth } from "../auth";
 import { clientForContext } from "../common/context";
+import { getDocumentFileOutputFields } from "../common/output-schemas";
 
 // `/download/` and `/preview/` serve the *archive* copy when one exists
 // (`use_archive = not original_requested and has_archive_version`) and differ
@@ -38,6 +39,7 @@ export const getDocumentFile = createAction({
     "Downloads a document's bytes and returns a file reference the next step can consume.",
   audience: "both",
   aiMetadata: { idempotent: true },
+  outputSchema: { fields: getDocumentFileOutputFields },
   props: {
     id: Property.Number({ displayName: "Document ID", required: true }),
     variant: Property.StaticDropdown({

@@ -13,6 +13,7 @@ import {
   waitForTask,
   type NormalizedTask,
 } from "../common/tasks";
+import { uploadOutputFields } from "../common/output-schemas";
 
 // paperless consumes duplicates by default (pre_check_duplicate only rejects
 // when PAPERLESS_CONSUMER_DELETE_DUPLICATES is set, and it is not by default),
@@ -57,6 +58,7 @@ export const uploadDocument = createAction({
     "Uploads a file for consumption and, by default, waits for paperless to finish creating the document.",
   audience: "both",
   aiMetadata: { idempotent: false },
+  outputSchema: { fields: uploadOutputFields },
   props: {
     file: Property.File({
       displayName: "File",

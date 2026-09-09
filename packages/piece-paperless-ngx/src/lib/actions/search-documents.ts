@@ -5,6 +5,7 @@ import { clientForContext } from "../common/context";
 import { trimContentAll } from "../common/documents";
 import { PaperlessApiError } from "../common/errors";
 import { objectMultiPicker, objectPicker } from "../common/pickers";
+import { searchOutputFields } from "../common/output-schemas";
 
 // The four search shapes paperless exposes on /api/documents/, each a
 // different query parameter rather than a mode flag.
@@ -23,6 +24,7 @@ export const searchDocuments = createAction({
     "Searches the archive by full text, substring, title or similarity, with the usual metadata filters.",
   audience: "both",
   aiMetadata: { idempotent: true },
+  outputSchema: { fields: searchOutputFields },
   props: {
     mode: Property.StaticDropdown({
       displayName: "Mode",

@@ -9,6 +9,7 @@ import { clientFor, type StoreLike } from "../common/context";
 import { trimContent } from "../common/documents";
 import { PaperlessApiError } from "../common/errors";
 import { objectMultiPicker } from "../common/pickers";
+import { documentTriggerOutputFields } from "../common/output-schemas";
 
 // WorkflowTrigger.WorkflowTriggerType — only these two carry {{doc_id}};
 // consumption-started fires before the document exists, so it has nothing
@@ -199,6 +200,7 @@ export function createDocumentTrigger(options: DocumentTriggerOptions) {
     displayName: options.displayName,
     description: options.description,
     type: TriggerStrategy.WEBHOOK,
+    outputSchema: { fields: documentTriggerOutputFields },
     props: {
       filter_filename: Property.ShortText({
         displayName: "Filename filter",

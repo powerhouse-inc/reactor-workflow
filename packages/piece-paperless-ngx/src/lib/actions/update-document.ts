@@ -3,6 +3,7 @@ import { paperlessAuth } from "../auth";
 import { clientForContext } from "../common/context";
 import { trimContent } from "../common/documents";
 import { objectMultiPicker, objectPicker } from "../common/pickers";
+import { updateDocumentOutputFields } from "../common/output-schemas";
 
 export const updateDocument = createAction({
   auth: paperlessAuth,
@@ -11,6 +12,7 @@ export const updateDocument = createAction({
   description: "Changes a document's metadata, adding or removing tags without clobbering the rest.",
   audience: "both",
   aiMetadata: { idempotent: true },
+  outputSchema: { fields: updateDocumentOutputFields },
   props: {
     id: Property.Number({ displayName: "Document ID", required: true }),
     title: Property.ShortText({ displayName: "Title", required: false }),

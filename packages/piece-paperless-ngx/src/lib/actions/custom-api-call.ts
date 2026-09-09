@@ -2,6 +2,7 @@ import { createAction, Property } from "@activepieces/pieces-framework";
 import { paperlessAuth } from "../auth";
 import type { HttpVerb, QueryValue } from "../common/client";
 import { clientForContext } from "../common/context";
+import { customApiCallOutputFields } from "../common/output-schemas";
 
 // The convention escape hatch: paperless exposes 18 resource endpoints, and a
 // 1:1 action mapping would be 40+ near-duplicates. This covers the tail —
@@ -15,6 +16,7 @@ export const customApiCall = createAction({
     "Calls any paperless-ngx API endpoint with the connection's credentials and negotiated API version.",
   audience: "both",
   aiMetadata: { idempotent: false },
+  outputSchema: { fields: customApiCallOutputFields },
   props: {
     method: Property.StaticDropdown({
       displayName: "Method",

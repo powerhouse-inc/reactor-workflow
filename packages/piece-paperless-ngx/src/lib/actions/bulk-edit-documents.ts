@@ -4,6 +4,7 @@ import { paperlessAuth } from "../auth";
 import { clientForContext } from "../common/context";
 import { PaperlessApiError } from "../common/errors";
 import { objectMultiPicker, objectPicker } from "../common/pickers";
+import { bulkEditOutputFields } from "../common/output-schemas";
 
 // Only the metadata methods. The document-editing ones (delete, reprocess,
 // rotate, merge, edit_pdf, split, remove_password) moved to their own
@@ -29,6 +30,7 @@ export const bulkEditDocuments = createAction({
     "Applies one metadata change to many documents in a single server-side operation.",
   audience: "both",
   aiMetadata: { idempotent: false },
+  outputSchema: { fields: bulkEditOutputFields },
   props: {
     document_ids: Property.Array({
       displayName: "Document IDs",

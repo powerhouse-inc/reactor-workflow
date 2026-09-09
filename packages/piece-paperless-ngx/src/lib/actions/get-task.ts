@@ -2,6 +2,7 @@ import { createAction, Property } from "@activepieces/pieces-framework";
 import { paperlessAuth } from "../auth";
 import { clientForContext } from "../common/context";
 import { readTask } from "../common/tasks";
+import { getTaskOutputFields } from "../common/output-schemas";
 
 export const getTask = createAction({
   auth: paperlessAuth,
@@ -11,6 +12,7 @@ export const getTask = createAction({
     "Reads a consumption task by its UUID — the value an upload returns before the document exists.",
   audience: "both",
   aiMetadata: { idempotent: true },
+  outputSchema: { fields: getTaskOutputFields },
   props: {
     task_id: Property.ShortText({
       displayName: "Task UUID",
