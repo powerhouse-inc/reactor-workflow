@@ -32,8 +32,12 @@ export const submitJobAction = createAction({
     const p = ctx.propsValue as Record<string, unknown>;
     const fileRaw = p.file;
     const urlRaw = typeof p.url === "string" ? p.url.trim() : "";
+    const hasFile = fileRaw !== undefined && fileRaw !== null && fileRaw !== "";
+    if (hasFile && urlRaw) {
+      throw new DoclingError("VALIDATION", "Provide exactly one of file or url, not both.");
+    }
     let source: DoclingSource;
-    if (fileRaw !== undefined && fileRaw !== null && fileRaw !== "") {
+    if (hasFile) {
       const file = normalizeFile(fileRaw);
       source = { kind: "file", filename: file.filename, base64: file.base64 };
     } else if (urlRaw) {

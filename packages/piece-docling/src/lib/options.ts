@@ -39,21 +39,37 @@ export function buildOptions(props: ActionOptionsProps): ConvertDocumentsOptions
     do_table_structure: true,
     image_export_mode: props.image_mode ?? "placeholder",
   };
-  if (props.page_range !== undefined) {
-    if (
-      !Array.isArray(props.page_range) ||
-      props.page_range.length !== 2 ||
-      !props.page_range.every((n) => typeof n === "number" && Number.isInteger(n))
-    ) {
-      throw new DoclingError("VALIDATION", `page_range must be a 2-element integer array, got ${JSON.stringify(props.page_range)}.`);
-    }
-    const [start, end] = props.page_range as [number, number];
-    if (start < 1 || end < start) {
-      throw new DoclingError("VALIDATION", `page_range must be 1-based with start <= end, got [${start}, ${end}].`);
-    }
-    out.page_range = [start, end];
-  }
+  const range = parsePageRange(props.page_range);
+  if (range) out.page_range = range;
   return out;
+}
+
+// docling-serve's contract: a 1-based [start, end] page tuple
+// (ConvertDocumentsOptions.page_range). The builder field is a ShortText
+// "start[-end]" string; 2-element integer arrays are accepted too, for
+// values injected via expressions. "start" alone means that page only;
+// "start-" runs to the last page (sent as a large integer the server
+// validator accepts).
+export function parsePageRange(raw: unknown): [number, number] | null {
+  if (raw === undefined || raw === null || raw === "") return null;
+  let start: number;
+  let end: number;
+  if (typeof raw === "string") {
+    const m = /^(\d+)(?:-(\d*))?$/.exec(raw.trim());
+    if (!m) {
+      throw new DoclingError("VALIDATION", `page_range must look like "start" or "start-end" (1-based), got "${raw}".`);
+    }
+    start = Number(m[1]);
+    end = m[2] === undefined ? start : m[2] === "" ? 2147483647 : Number(m[2]);
+  } else if (Array.isArray(raw) && raw.length === 2 && raw.every((n) => typeof n === "number" && Number.isInteger(n))) {
+    [start, end] = raw as [number, number];
+  } else {
+    throw new DoclingError("VALIDATION", `page_range must be a "start" / "start-end" string or a 2-element integer array, got ${JSON.stringify(raw)}.`);
+  }
+  if (start < 1 || end < start) {
+    throw new DoclingError("VALIDATION", `page_range must be 1-based with start <= end, got [${start}, ${end}].`);
+  }
+  return [start, end];
 }
 
 export function executionMode(props: ActionOptionsProps): "async" | "sync" {
@@ -100,10 +116,10 @@ export const convertProps = {
       ],
     },
   }),
-  page_range: Property.Object({
+  page_range: Property.ShortText({
     displayName: "Page Range",
     required: false,
-    description: "Optional 1-based [start, end] page window, e.g. [1, 20].",
+    description: 'Optional 1-based page window as start-end, e.g. "5-20" ("5-" to the last page, "5" a single page).',
   }),
   image_mode: Property.StaticDropdown({
     displayName: "Image Mode",

@@ -13,7 +13,7 @@
     "Run OCR on the pages (server default: on).": "Run OCR on the pages (server default: on).",
     "Table Mode": "Table Mode",
     "Page Range": "Page Range",
-    "Optional 1-based [start, end] page window, e.g. [1, 20].": "Optional 1-based [start, end] page window, e.g. [1, 20].",
+    "Optional 1-based page window as start-end, e.g. \"5-20\" (\"5-\" to the last page, \"5\" a single page).": "Optional 1-based page window as start-end, e.g. \"5-20\" (\"5-\" to the last page, \"5\" a single page).",
     "Image Mode": "Image Mode",
     "Execution": "Execution",
     "Timeout (seconds)": "Timeout (seconds)",

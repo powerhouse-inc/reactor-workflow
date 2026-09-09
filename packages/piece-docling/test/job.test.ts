@@ -35,6 +35,21 @@ describe("submit_job + get_result", () => {
     } finally { await mock.close(); }
   });
 
+  it("submit rejects when both file and url are given", async () => {
+    const mock = await startMockDocling({ apiKey: "k-test" });
+    try {
+      (AUTH.props as { base_url: string }).base_url = mock.baseUrl;
+      await expect(
+        submitJobAction.run(ctx({ file: { filename: "a.pdf", data: Buffer.from("x") }, url: "https://example.com/x.pdf" })),
+      ).rejects.toMatchObject({
+        kind: "VALIDATION",
+        // vitest's stringContaining factory is any; suppression is line-scoped
+        // oxlint-disable-next-line typescript/no-unsafe-assignment
+        message: expect.stringContaining("not both"),
+      });
+    } finally { await mock.close(); }
+  });
+
   it("get_result on a failed job throws the typed failure", async () => {
     const mock = await startMockDocling({ apiKey: "k-test", failJobs: ["bad.pdf"] });
     try {

@@ -18,14 +18,29 @@ describe("buildOptions", () => {
     });
   });
 
-  it("passes a valid 1-based page_range through", () => {
+  it("passes a valid 1-based page_range through (array form)", () => {
     expect(buildOptions({ page_range: [2, 10] }).page_range).toEqual([2, 10]);
+  });
+
+  it("parses the builder's start-end string form", () => {
+    expect(buildOptions({ page_range: "5-20" }).page_range).toEqual([5, 20]);
+    expect(buildOptions({ page_range: "5" }).page_range).toEqual([5, 5]);
+    expect(buildOptions({ page_range: "5-" }).page_range).toEqual([5, 2147483647]);
+    expect(buildOptions({ page_range: " 5-20 " }).page_range).toEqual([5, 20]);
+  });
+
+  it("omits page_range when empty", () => {
+    expect(buildOptions({ page_range: undefined }).page_range).toBeUndefined();
+    expect(buildOptions({ page_range: "" }).page_range).toBeUndefined();
   });
 
   it("rejects invalid page_range", () => {
     expect(() => buildOptions({ page_range: [0, 5] })).toThrow(DoclingError);
     expect(() => buildOptions({ page_range: [5, 2] })).toThrow(DoclingError);
     expect(() => buildOptions({ page_range: "nonsense" })).toThrow(DoclingError);
+    expect(() => buildOptions({ page_range: "0-5" })).toThrow(DoclingError);
+    expect(() => buildOptions({ page_range: "5-3" })).toThrow(DoclingError);
+    expect(() => buildOptions({ page_range: "1-2-3" })).toThrow(DoclingError);
   });
 
   it("execution/timeout defaults", () => {
