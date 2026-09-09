@@ -105,6 +105,15 @@ export const searchDocuments = createAction({
       include_content?: boolean;
     };
     const mode = props.mode ?? "full_text";
+    // propsValue is unvalidated: an unknown mode would index MODE_PARAM to
+    // undefined, write the literal key "undefined", and paperless — ignoring
+    // the unknown param — would answer with the unfiltered archive.
+    if (!(mode in MODE_PARAM)) {
+      throw new PaperlessApiError(
+        `Unknown search mode "${mode}"; expected one of ${Object.keys(MODE_PARAM).join(", ")}`,
+        { category: "validation" },
+      );
+    }
     const query: Record<string, QueryValue> = {};
 
     if (mode === "more_like") {

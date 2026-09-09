@@ -111,6 +111,10 @@ export class MockPaperless {
   readonly workflows = new Map<number, MockWorkflow>();
   readonly bulkEdits: Record<string, unknown>[] = [];
   readonly files = new Map<number, { archive?: Buffer; original: Buffer }>();
+  // `task_id` is a plain get_queryset filter rather than a filterset field, so
+  // a server can answer /tasks/ with the whole list. Set this to reproduce one
+  // that does.
+  ignoreTaskIdFilter = false;
 
   private server?: Server;
   private port = 0;
@@ -366,7 +370,13 @@ export class MockPaperless {
       const nameLike = request.query.name?.[0];
       const createdAfter = request.query.date_created_after?.[0];
       const rows = [...this.tasks.values()].filter((task) => {
-        if (taskId !== undefined && task.task_id !== taskId) return false;
+        if (
+          !this.ignoreTaskIdFilter &&
+          taskId !== undefined &&
+          task.task_id !== taskId
+        ) {
+          return false;
+        }
         if (taskType !== undefined && task.task_type !== taskType) return false;
         if (triggerSource !== undefined && task.trigger_source !== triggerSource) {
           return false;
@@ -453,13 +463,20 @@ export class MockPaperless {
 
     if (path === "/documents/" && method === "GET") {
       let rows = [...this.documents.values()];
+      // Compared as instants, like the database does. A string compare would
+      // be wrong for the offset form DRF renders when the server's TIME_ZONE
+      // is not UTC — which is the case the cursor sweep has to survive.
       const addedAfter = request.query.added__gt?.[0];
       if (addedAfter) {
-        rows = rows.filter((row) => row.added > addedAfter);
+        rows = rows.filter(
+          (row) => Date.parse(row.added) > Date.parse(addedAfter),
+        );
       }
       const modifiedAfter = request.query.modified__gt?.[0];
       if (modifiedAfter) {
-        rows = rows.filter((row) => row.modified > modifiedAfter);
+        rows = rows.filter(
+          (row) => Date.parse(row.modified) > Date.parse(modifiedAfter),
+        );
       }
       const titleContains = request.query.title__icontains?.[0];
       if (titleContains) {
@@ -468,7 +485,12 @@ export class MockPaperless {
         );
       }
       const ordering = request.query.ordering?.[0];
-      if (ordering === "added") rows.sort((a, b) => a.added.localeCompare(b.added));
+      if (ordering === "added") {
+        rows.sort((a, b) => Date.parse(a.added) - Date.parse(b.added));
+      }
+      if (ordering === "modified") {
+        rows.sort((a, b) => Date.parse(a.modified) - Date.parse(b.modified));
+      }
       const query = request.query.query?.[0];
       const results = rows.map((row) => {
         const serialized = this.serializeDocument(row);

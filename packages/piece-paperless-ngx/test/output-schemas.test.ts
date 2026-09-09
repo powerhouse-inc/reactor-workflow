@@ -141,7 +141,7 @@ describe("output schemas", () => {
         described[3],
         await runAction(searchDocuments, {
           auth: authFor(mock),
-          props: { mode: "title", term: "Document" },
+          props: { mode: "title_only", term: "Document" },
         }),
       ],
       [

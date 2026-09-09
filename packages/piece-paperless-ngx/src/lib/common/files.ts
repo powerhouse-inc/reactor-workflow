@@ -39,10 +39,24 @@ function bufferFrom(value: unknown): Buffer | undefined {
   }
   if (Array.isArray(value)) return Buffer.from(value as number[]);
   if (typeof value === "string") {
-    const payload = /^data:[^,]*;base64,(.*)$/is.exec(value)?.[1] ?? value;
-    return Buffer.from(payload, "base64");
+    const dataUri = /^data:[^,]*;base64,(.*)$/is.exec(value)?.[1];
+    if (dataUri !== undefined) return Buffer.from(dataUri, "base64");
+    // A bare string is only taken as base64 when it actually looks like it.
+    // Buffer.from silently drops every character it cannot decode, so
+    // "Invoice text" or a URL would become a handful of garbage bytes, pass
+    // the emptiness guard, and upload as a corrupt document.
+    return isBase64(value) ? Buffer.from(value, "base64") : undefined;
   }
   return undefined;
+}
+
+// Charset and length: base64 encodes three bytes per four characters, so a
+// payload whose length is not a multiple of four cannot be one. Line breaks
+// are tolerated (MIME wraps at 76 columns); a space is not.
+function isBase64(value: string): boolean {
+  const compact = value.replace(/[\r\n]/g, "");
+  if (compact === "" || compact.length % 4 !== 0) return false;
+  return /^[A-Za-z0-9+/]+={0,2}$/.test(compact);
 }
 
 export function contentTypeFor(filename: string): string {

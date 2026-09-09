@@ -24,6 +24,23 @@ const ADOPT_WINDOW_MS = 15 * 60_000;
 
 const TASK_STORE_PREFIX = "paperless:upload-task:";
 
+// Remembered with the time it was written, because the store branch has to
+// honour the same adoption window as the server-side lookup: a bare id with no
+// timestamp would be adopted forever, so a step that uploaded once could never
+// upload that filename and size again.
+interface RememberedTask {
+  task_id: string;
+  at: number;
+}
+
+function readRemembered(value: unknown, windowMs: number): string | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { task_id, at } = value as Partial<RememberedTask>;
+  if (typeof task_id !== "string" || task_id === "") return undefined;
+  if (typeof at !== "number" || Date.now() - at > windowMs) return undefined;
+  return task_id;
+}
+
 async function findAdoptableTask(
   client: PaperlessClient,
   filename: string,
@@ -145,8 +162,11 @@ export const uploadDocument = createAction({
       // The piece store is the cheap path, but it lives in the worker process
       // and a timeout replaces that worker — so the server-side lookup is the
       // one that actually survives the case this guards against.
-      const remembered = await store?.get(storeKey);
-      if (typeof remembered === "string") {
+      const remembered = readRemembered(
+        await store?.get(storeKey),
+        ADOPT_WINDOW_MS,
+      );
+      if (remembered !== undefined) {
         taskId = remembered;
         adopted = true;
       } else {
@@ -204,7 +224,10 @@ export const uploadDocument = createAction({
         );
       }
       taskId = returned;
-      await store?.put(storeKey, taskId);
+      await store?.put(storeKey, {
+        task_id: taskId,
+        at: Date.now(),
+      } satisfies RememberedTask);
     }
 
     if (props.wait_for_consumption === false) {
@@ -226,8 +249,12 @@ export const uploadDocument = createAction({
       };
     }
 
-    assertTaskSucceeded(task);
+    // Cleared on any terminal status, not just success: a remembered id whose
+    // task ended in failure or revoked has nothing left to adopt, and leaving
+    // it behind made every later attempt re-read that same failure instead of
+    // uploading again.
     await store?.put(storeKey, null);
+    assertTaskSucceeded(task);
 
     const result: Record<string, unknown> = {
       task_id: taskId,

@@ -70,7 +70,7 @@ export function objectPicker(
     auth: paperlessAuth,
     displayName: options.displayName ?? OBJECT_LABELS[kind],
     description: options.description,
-    required: false,
+    required: options.required ?? false,
     refreshers: ["auth"],
     options: ({ auth }) => loadOptions(kind, auth),
   });

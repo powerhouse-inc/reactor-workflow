@@ -53,6 +53,21 @@ describe("get_document", () => {
 });
 
 describe("search_documents", () => {
+  it("rejects an unknown mode instead of returning the whole archive", async () => {
+    mock.seedDocument({ title: "Invoice Q3" });
+    mock.seedDocument({ title: "Unrelated" });
+
+    // An unknown mode used to index MODE_PARAM to undefined and write the
+    // literal key "undefined"; paperless ignores the unknown param, so the
+    // step answered with every document in the archive.
+    await expect(
+      runAction(searchDocuments, {
+        auth: authFor(mock),
+        props: { mode: "title", term: "invoice" },
+      }),
+    ).rejects.toThrow(/Unknown search mode "title"/);
+  });
+
   it("uses the query parameter for full text and keeps the search hit", async () => {
     mock.seedDocument({ title: "Invoice Q3" });
 
@@ -111,6 +126,24 @@ describe("search_documents", () => {
 });
 
 describe("get_task", () => {
+  it("reports nothing rather than a stranger's task when the filter is ignored", async () => {
+    // A server that does not honour the task_id filter answers with the whole
+    // list. Falling back to its first row reported someone else's task — and
+    // through waitForTask, would have handed upload_document that task's
+    // document id as the newly uploaded one.
+    mock.seedTask({ status: "success", related_document_ids: [7] });
+    mock.seedTask({ status: "success", related_document_ids: [8] });
+    mock.ignoreTaskIdFilter = true;
+
+    const result = (await runAction(getTask, {
+      auth: authFor(mock),
+      props: { task_id: "00000000-0000-0000-0000-000000000000" },
+    })) as Record<string, unknown>;
+
+    expect(result.status).toBe("unknown");
+    expect(result.task_id).toBe("00000000-0000-0000-0000-000000000000");
+  });
+
   it("normalizes the v10 task shape", async () => {
     const task = mock.seedTask({
       status: "success",

@@ -104,7 +104,9 @@ export const bulkEditDocuments = createAction({
     };
     const ids = (props.document_ids ?? [])
       .map((value) => Number(value))
-      .filter((value) => Number.isInteger(value));
+      // Number("") and Number(null) are both 0, and Number.isInteger(0) is
+      // true, so a blank row from the array editor would post documents: [0].
+      .filter((value) => Number.isInteger(value) && value > 0);
     if (ids.length === 0) {
       throw new PaperlessApiError("At least one document id is required", {
         category: "validation",

@@ -98,7 +98,14 @@ export async function readTask(
   const match = results
     .map((row) => normalizeTask(row))
     .find((task) => task?.task_id === taskId);
-  return match ?? normalizeTask(results[0]);
+  if (match) return match;
+  // `task_id` is a plain get_queryset filter, not a filterset field, so a
+  // server that ignores it answers with the whole list. Falling back to
+  // results[0] there would report a stranger's task — and through
+  // waitForTask, hand upload_document someone else's document id. A single
+  // row is still trusted: that is the shape a server whose task_id filter
+  // worked returns even when normalizeTask could not read the id back.
+  return results.length === 1 ? normalizeTask(results[0]) : undefined;
 }
 
 export function isComplete(status: string): boolean {

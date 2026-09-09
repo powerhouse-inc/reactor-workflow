@@ -151,6 +151,48 @@ describe("onEnable", () => {
     });
   });
 
+  it("re-creates a registration whose workflow was deleted in paperless", async () => {
+    const store = new MemoryStore();
+    await runHook(newDocument, "onEnable", {
+      auth: authFor(mock),
+      webhookUrl: WEBHOOK_URL,
+      store,
+    });
+    const first = registeredWorkflow();
+
+    // Someone removed it in the paperless UI. The PATCH then 404s, and because
+    // onEnable's throw leaves the stale registration in the store, every retry
+    // used to PATCH the same dead id with no path back to a create.
+    mock.workflows.delete(first.id);
+
+    await runHook(newDocument, "onEnable", {
+      auth: authFor(mock),
+      webhookUrl: WEBHOOK_URL,
+      store,
+    });
+
+    expect(mock.workflows.size).toBe(1);
+    const recreated = registeredWorkflow();
+    expect(recreated.id).not.toBe(first.id);
+    expect(webhookOf(recreated).headers).toEqual({
+      "X-Powerhouse-Webhook-Token": "tok-abc",
+    });
+  });
+
+  it("names the paperless workflow without leaking the delivery token", async () => {
+    await runHook(newDocument, "onEnable", {
+      auth: authFor(mock),
+      webhookUrl: WEBHOOK_URL,
+      store: new MemoryStore(),
+    });
+    // The name used to carry the last 8 characters of `${endpoint}#${token}`,
+    // i.e. of the raw credential, into a field the paperless UI displays.
+    const name = String(registeredWorkflow().name);
+    expect(name).not.toContain("tok-abc");
+    expect(name).not.toContain("ok-abc");
+    expect(name).toMatch(/^Powerhouse: document_added \([0-9a-f]{8}\)$/);
+  });
+
   it("refuses when no public URL is configured", async () => {
     await expect(
       runHook(newDocument, "onEnable", {
@@ -288,6 +330,35 @@ describe("run", () => {
     );
 
     // Nothing new: the recovery sweep is quiet when the webhook kept up.
+    const again = (await runHook(newDocument, "run", {
+      auth: authFor(mock),
+      store,
+    })) as Record<string, unknown>[];
+    expect(again).toEqual([]);
+  });
+
+  it("advances the cursor by instant when the server answers with an offset", async () => {
+    // DRF renders datetimes in the server's TIME_ZONE, so a paperless off UTC
+    // answers "…-05:00" while the seeded cursor is a "Z" string. Compared
+    // lexically that offset form sorts *below* the cursor, so the cursor never
+    // advanced and every sweep re-emitted the same rows forever.
+    const store = new MemoryStore();
+    // 04:00-05:00 is 09:00Z — later than the cursor as an instant, but lower
+    // than it as a string, which is what made the old compare stick.
+    await store.put("paperless:sweep-cursor", "2026-09-02T08:30:00.000Z");
+    const later = mock.seedDocument({ added: "2026-09-02T04:00:00-05:00" });
+    expect("2026-09-02T04:00:00-05:00" > "2026-09-02T08:30:00.000Z").toBe(false);
+
+    const items = (await runHook(newDocument, "run", {
+      auth: authFor(mock),
+      store,
+    })) as Record<string, unknown>[];
+    expect(items.map((item) => item.id)).toEqual([later.id]);
+    expect(store.entries.get("paperless:sweep-cursor")).toBe(
+      "2026-09-02T04:00:00-05:00",
+    );
+
+    // And having advanced, the next sweep is quiet rather than re-emitting.
     const again = (await runHook(newDocument, "run", {
       auth: authFor(mock),
       store,

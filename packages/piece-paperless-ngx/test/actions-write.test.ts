@@ -35,6 +35,16 @@ describe("normalizeFile", () => {
     expect(file.buffer.equals(bytes)).toBe(true);
   });
 
+  it("rejects a plain string rather than decoding it as base64", () => {
+    // Buffer.from drops every character it cannot decode, so a text value or
+    // a URL wired into the file prop used to become a few bytes of garbage,
+    // pass the emptiness guard and upload as a corrupt document.
+    expect(() => normalizeFile("Invoice text")).toThrow(/empty/i);
+    expect(() => normalizeFile("https://example.com/invoice.pdf")).toThrow(
+      /empty/i,
+    );
+  });
+
   it("accepts a base64 string from host hydration", () => {
     const file = normalizeFile(
       { filename: "scan.png", data: bytes.toString("base64") },
@@ -210,6 +220,85 @@ describe("upload_document", () => {
     expect(typeof result.task_id).toBe("string");
   });
 
+  it("forgets a task that ended in failure, so the next run uploads", async () => {
+    // The remembered id used to survive a failing task, and every later
+    // attempt then re-read that same terminal failure instead of uploading.
+    const store = new MemoryStore();
+    const failing = runAction(uploadDocument, {
+      auth: authFor(mock),
+      props: { file, timeout_seconds: 5, adopt_existing_task: false },
+      store,
+    });
+    const task = await waitFor(() => [...mock.tasks.values()][0]);
+    task.status = "failure";
+    task.result = "It is a duplicate";
+    await expect(failing).rejects.toThrow(/duplicate/);
+
+    expect([...store.entries.values()].filter(Boolean)).toEqual([]);
+
+    // A second attempt now posts again rather than adopting the dead task.
+    const retry = runAction(uploadDocument, {
+      auth: authFor(mock),
+      props: { file, timeout_seconds: 5 },
+      store,
+    });
+    const second = await waitFor(() =>
+      [...mock.tasks.values()].length > 1
+        ? [...mock.tasks.values()].at(-1)
+        : undefined,
+    );
+    const document = mock.seedDocument();
+    second.status = "success";
+    second.related_document_ids = [document.id];
+    const result = (await retry) as Record<string, unknown>;
+    expect(result.status).toBe("success");
+    expect(
+      mock.requests.filter(
+        (request) => request.path === "/documents/post_document/",
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("stops adopting a remembered task once the window has passed", async () => {
+    const store = new MemoryStore();
+    const result = (await runAction(uploadDocument, {
+      auth: authFor(mock),
+      props: { file, wait_for_consumption: false },
+      store,
+    })) as Record<string, unknown>;
+    expect(result.adopted).toBe(false);
+
+    // Fresh, the remembered entry is adopted — that is the case it exists for.
+    const [key] = [...store.entries.keys()];
+    const fresh = (await runAction(uploadDocument, {
+      auth: authFor(mock),
+      props: { file, wait_for_consumption: false },
+      store,
+    })) as Record<string, unknown>;
+    expect(fresh.adopted).toBe(true);
+    expect(fresh.task_id).toBe(result.task_id);
+
+    // Aged past the 15-minute window it is not. Without a timestamp to check,
+    // this id would be adopted forever and the step could never upload the
+    // same filename and size again.
+    store.entries.set(key, {
+      task_id: String(result.task_id),
+      at: Date.now() - 16 * 60_000,
+    });
+    // Age the server-side task too, so its own window does not adopt instead.
+    for (const task of mock.tasks.values()) {
+      task.date_created = new Date(Date.now() - 16 * 60_000).toISOString();
+    }
+
+    const again = (await runAction(uploadDocument, {
+      auth: authFor(mock),
+      props: { file, wait_for_consumption: false },
+      store,
+    })) as Record<string, unknown>;
+    expect(again.adopted).toBe(false);
+    expect(again.task_id).not.toBe(result.task_id);
+  });
+
   it("fails distinctly on a failed and on a revoked task", async () => {
     const failing = runAction(uploadDocument, {
       auth: authFor(mock),
@@ -298,6 +387,22 @@ describe("update_document", () => {
 });
 
 describe("bulk_edit_documents", () => {
+  it("drops blank rows instead of posting document id 0", async () => {
+    // Number("") and Number(null) are both 0 and Number.isInteger(0) is true,
+    // so an empty row from the array editor used to survive the filter.
+    const document = mock.seedDocument();
+    const tag = mock.seedObject("tags", { name: "Paid" });
+    await runAction(bulkEditDocuments, {
+      auth: authFor(mock),
+      props: {
+        document_ids: [document.id, "", null],
+        method: "add_tag",
+        parameters: { tag: tag.id },
+      },
+    });
+    expect(mock.bulkEdits.at(-1)?.documents).toEqual([document.id]);
+  });
+
   it("shapes modify_tags parameters", async () => {
     const result = (await runAction(bulkEditDocuments, {
       auth: authFor(mock),

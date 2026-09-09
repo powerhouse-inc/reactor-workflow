@@ -176,6 +176,18 @@ async function preflight(client: PaperlessClient): Promise<void> {
   }
 }
 
+// A stable, non-secret discriminator so two triggers on the same paperless do
+// not share a workflow name. FNV-1a: nothing here needs to resist an attacker,
+// only to be the same string on every republish of the same endpoint.
+function shortHash(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
 function readRegistration(value: unknown): Registration | undefined {
   if (!isRecord(value) || typeof value.workflow_id !== "number") {
     return undefined;
@@ -262,39 +274,60 @@ export function createDocumentTrigger(options: DocumentTriggerOptions) {
       const props = context.propsValue as Record<string, unknown>;
       const existing = readRegistration(await context.store.get(STORE_KEY));
 
-      const payload: Record<string, unknown> = {
-        name: `Powerhouse: ${options.event.toLowerCase()} (${context.webhookUrl?.slice(-8) ?? "flow"})`,
+      // Named after the endpoint, never the webhookUrl: that carries the
+      // delivery token in its fragment, and a slice of its tail would have put
+      // 8 characters of the raw credential into a Workflow.name that is
+      // visible in the paperless UI and its database.
+      const payloadFor = (
+        registration: Registration | undefined,
+      ): Record<string, unknown> => ({
+        name: `Powerhouse: ${options.event.toLowerCase()} (${shortHash(endpoint)})`,
         enabled: true,
         triggers: [
           {
-            ...(existing?.trigger_id ? { id: existing.trigger_id } : {}),
+            ...(registration?.trigger_id ? { id: registration.trigger_id } : {}),
             ...triggerBody(options.type, props),
           },
         ],
         actions: [
           {
-            ...(existing?.action_id ? { id: existing.action_id } : {}),
+            ...(registration?.action_id ? { id: registration.action_id } : {}),
             ...actionBody(endpoint, token, options.event),
-            ...(existing?.webhook_id
-              ? { webhook: { id: existing.webhook_id, ...(actionBody(endpoint, token, options.event).webhook as Record<string, unknown>) } }
+            ...(registration?.webhook_id
+              ? { webhook: { id: registration.webhook_id, ...(actionBody(endpoint, token, options.event).webhook as Record<string, unknown>) } }
               : {}),
           },
         ],
-      };
+      });
 
       // update_or_create on the nested ids makes a republish an in-place
       // update — which is also how a rotated token reaches paperless.
-      const response = existing
-        ? await client.request<Record<string, unknown>>({
+      let response: { data: Record<string, unknown> } | undefined;
+      if (existing) {
+        try {
+          response = await client.request<Record<string, unknown>>({
             method: "PATCH",
             path: `workflows/${existing.workflow_id}/`,
-            json: payload,
-          })
-        : await client.request<Record<string, unknown>>({
-            method: "POST",
-            path: "workflows/",
-            json: payload,
+            json: payloadFor(existing),
           });
+        } catch (error) {
+          // Someone deleted the workflow in the paperless UI. Without this the
+          // PATCH 404s on every retry forever, because onEnable's error leaves
+          // the stale registration in the store for the next attempt to reuse.
+          // The nested ids go with it — they belonged to that workflow.
+          if (
+            !(error instanceof PaperlessApiError) ||
+            error.category !== "not_found"
+          ) {
+            throw error;
+          }
+        }
+      }
+      response ??= await client.request<Record<string, unknown>>({
+        method: "POST",
+        path: "workflows/",
+        json: payloadFor(undefined),
+      });
 
       const workflow = response.data;
       const trigger = Array.isArray(workflow.triggers)
@@ -390,9 +423,15 @@ export function createDocumentTrigger(options: DocumentTriggerOptions) {
         query,
         200,
       );
+      // Compared as instants, not strings. DRF renders datetimes in the
+      // server's TIME_ZONE, so a paperless configured off UTC answers
+      // "2026-09-09T04:00:00-05:00" while the seeded cursor is a "Z" string —
+      // and lexically that offset form sorts *below* the cursor, which would
+      // pin the cursor forever and re-emit the same rows on every sweep.
       const newest = rows.reduce<string>((latest, row) => {
         const value = row[options.cursorField];
-        return typeof value === "string" && value > latest ? value : latest;
+        if (typeof value !== "string") return latest;
+        return Date.parse(value) > Date.parse(latest) ? value : latest;
       }, cursor);
       await context.store.put(CURSOR_KEY, newest);
       return rows.map((row) => emit(row, options.event, includeContent));
