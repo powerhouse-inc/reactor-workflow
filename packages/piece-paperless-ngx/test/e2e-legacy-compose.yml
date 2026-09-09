@@ -10,6 +10,13 @@
 #
 # A bridge network is fine here: this half never receives a webhook, so it
 # needs no route back to the test process.
+#
+# The project name and volumes are explicit so this stack can run alongside
+# e2e-compose.yml, which lives in the same directory: without them both files
+# share the project name `test` and the second `up -d` recreates the first
+# stack's webserver on top of it. The image bundles its own postgres, which
+# lives in the data volume below.
+name: paperless-legacy-e2e
 services:
   broker:
     image: docker.io/library/redis:7
@@ -30,3 +37,16 @@ services:
       PAPERLESS_ADMIN_PASSWORD: paperless-e2e
       PAPERLESS_TASK_WORKERS: "1"
       PAPERLESS_THREADS_PER_WORKER: "1"
+    volumes:
+      # Named (not the image's anonymous volumes) so a recreation by the
+      # neighbouring project can never resurrect another stack's database.
+      - paperless-legacy-e2e-data:/usr/src/paperless/data
+      - paperless-legacy-e2e-media:/usr/src/paperless/media
+      - paperless-legacy-e2e-consume:/usr/src/paperless/consume
+      - paperless-legacy-e2e-export:/usr/src/paperless/export
+
+volumes:
+  paperless-legacy-e2e-data:
+  paperless-legacy-e2e-media:
+  paperless-legacy-e2e-consume:
+  paperless-legacy-e2e-export:

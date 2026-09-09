@@ -6,9 +6,18 @@
 # netns both directions are plain loopback. The ports are non-default so this
 # never collides with a real paperless on 8000/6379.
 #
+# The project name and volumes are explicit so this stack can run alongside
+# e2e-legacy-compose.yml, which lives in the same directory: without them
+# both files share the project name `test` and the second `up -d` recreates
+# the first stack's webserver on top of it.
+#
 #   docker compose -f test/e2e-compose.yml up -d
 #   PAPERLESS_E2E_URL=http://localhost:18000 pnpm vitest run test/e2e.test.ts
 #   docker compose -f test/e2e-compose.yml down -v
+#
+# No PAPERLESS_DBHOST: this image then runs on its bundled SQLite in the data
+# volume, which keeps the whole stack in one container.
+name: paperless-e2e
 services:
   broker:
     image: docker.io/library/redis:7
@@ -36,3 +45,16 @@ services:
       PAPERLESS_WEBHOOKS_ALLOW_INTERNAL_REQUESTS: "true"
       PAPERLESS_TASK_WORKERS: "1"
       PAPERLESS_THREADS_PER_WORKER: "1"
+    volumes:
+      # Named (not the image's anonymous volumes) so a recreation by the
+      # neighbouring project can never resurrect another stack's database.
+      - paperless-e2e-data:/usr/src/paperless/data
+      - paperless-e2e-media:/usr/src/paperless/media
+      - paperless-e2e-consume:/usr/src/paperless/consume
+      - paperless-e2e-export:/usr/src/paperless/export
+
+volumes:
+  paperless-e2e-data:
+  paperless-e2e-media:
+  paperless-e2e-consume:
+  paperless-e2e-export:
