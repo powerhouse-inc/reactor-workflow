@@ -86,7 +86,15 @@ describe("bundle conformance (Tier-1)", () => {
     });
     const names = descriptor.actions.map((a) => a.name).sort();
     expect(names).toEqual(["chunk", "convert_file", "convert_url", "get_result", "health", "submit_job"]);
-    const byName = Object.fromEntries(descriptor.actions.map((a) => [a.name, a]));
+    type ActionDescriptor = { name: string; props: { name: string }[] };
+    const byName = Object.fromEntries(
+      descriptor.actions.map(
+        (action: { name: string }): [string, ActionDescriptor] => [
+          action.name,
+          action as ActionDescriptor,
+        ],
+      ),
+    ) as Record<string, ActionDescriptor>;
     expect(byName["convert_file"].props.map((p) => p.name)).toContain("file");
     expect(byName["submit_job"].props.map((p) => p.name)).toEqual(
       expect.arrayContaining(["file", "url", "format"]),
