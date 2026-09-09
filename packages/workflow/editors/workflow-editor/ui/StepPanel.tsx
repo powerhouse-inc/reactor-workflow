@@ -126,6 +126,8 @@ function ConfigSection(props: {
   connectionId?: string;
   // Step whose config this is; scopes the expression picker to its ancestors.
   scopeStepId?: string;
+  // Substituted into a piece's setup markdown; triggers only.
+  webhookUrl?: string;
 }) {
   const { form } = props;
   const configRecord = (props.config ?? {}) as Record<string, unknown>;
@@ -143,6 +145,7 @@ function ConfigSection(props: {
           scopeStepId={props.scopeStepId}
           connectionId={props.connectionId}
           secrets={props.designTime?.secrets}
+          webhookUrl={props.webhookUrl}
           loadOptions={
             props.designTime
               ? (propName, current) =>
@@ -723,21 +726,21 @@ function TestTriggerSection(props: { onTest: () => Promise<unknown> }) {
   );
 }
 
-// The endpoint URL is the whole credential, so it is read from the runtime
-// rather than derived here, and only exists once the workflow is enabled.
-function WebhookUrlSection(props: {
-  load: () => Promise<WebhookEndpoint | null>;
-}) {
-  const [state, setState] = useState<
-    | { kind: "loading" }
-    | { kind: "empty" }
-    | { kind: "error"; message: string }
-    | { kind: "ready"; endpoint: WebhookEndpoint }
-  >({ kind: "loading" });
-  const [copied, setCopied] = useState(false);
-  const { load } = props;
+type EndpointState =
+  | { kind: "loading" }
+  | { kind: "empty" }
+  | { kind: "error"; message: string }
+  | { kind: "ready"; endpoint: WebhookEndpoint };
+
+// Loaded once in the panel: the URL box shows it and a piece's setup markdown
+// substitutes it, and two fetches would mint against two reads of `armed`.
+function useWebhookEndpoint(
+  load: (() => Promise<WebhookEndpoint | null>) | undefined,
+): EndpointState {
+  const [state, setState] = useState<EndpointState>({ kind: "loading" });
 
   useEffect(() => {
+    if (!load) return;
     let cancelled = false;
     setState({ kind: "loading" });
     load().then(
@@ -757,6 +760,15 @@ function WebhookUrlSection(props: {
       cancelled = true;
     };
   }, [load]);
+
+  return state;
+}
+
+// The endpoint URL is the whole credential, so it is read from the runtime
+// rather than derived here, and only exists once the workflow is enabled.
+function WebhookUrlSection(props: { state: EndpointState }) {
+  const [copied, setCopied] = useState(false);
+  const state = props.state;
 
   return (
     <div>
@@ -802,6 +814,13 @@ function WebhookUrlSection(props: {
               config is invalid.
             </p>
           ) : null}
+          {!state.endpoint.absoluteUrl ? (
+            <p className="mt-1 rounded bg-amber-50 px-2 py-1 text-[11px] text-amber-700">
+              This reactor does not know its own public address, so the path
+              above is missing its origin. Prefix it with the host the provider
+              can reach.
+            </p>
+          ) : null}
           <p className="mt-1 text-[11px] text-slate-400">
             Treat this URL as a secret; anyone holding it can reach the
             endpoint.
@@ -821,6 +840,7 @@ export function TriggerPanel(props: {
   const { trigger, callbacks } = props;
   const isPieceTrigger = trigger.blockType.includes("#trigger:");
   const form = useBlockForm(trigger.blockType, props.designTime);
+  const endpoint = useWebhookEndpoint(props.designTime?.webhookEndpoint);
   // core#webhook, and any piece trigger the provider pushes to: both are
   // reached through this workflow's endpoint URL.
   const isWebhookTrigger =
@@ -843,7 +863,7 @@ export function TriggerPanel(props: {
     <div className="flex flex-col gap-3 p-4">
       <PanelHeader title="Trigger" missing={missing} onClose={props.onClose} />
       {isWebhookTrigger && props.designTime?.webhookEndpoint ? (
-        <WebhookUrlSection load={props.designTime.webhookEndpoint} />
+        <WebhookUrlSection state={endpoint} />
       ) : null}
       {isPieceTrigger ? (
         <ConnectionField
@@ -862,6 +882,9 @@ export function TriggerPanel(props: {
         onChange={(config) => setTrigger({ config })}
         designTime={props.designTime}
         connectionId={trigger.connectionId ?? undefined}
+        webhookUrl={
+          endpoint.kind === "ready" ? endpoint.endpoint.url : undefined
+        }
       />
       {isPieceTrigger && props.designTime?.testTrigger ? (
         <TestTriggerSection onTest={props.designTime.testTrigger} />

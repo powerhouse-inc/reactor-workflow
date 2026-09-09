@@ -73,7 +73,9 @@
   "dependencies": {
     "@powerhousedao/reactor-connectors": "workspace:*",
     "@xyflow/react": "^12.11.3",
-    "croner": "10.0.1"
+    "croner": "10.0.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.3.15",

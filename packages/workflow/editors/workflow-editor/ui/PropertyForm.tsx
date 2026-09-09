@@ -1,6 +1,13 @@
 // Property-driven config form, modeled on the Activepieces piece-properties
 // panel: one control per prop, typed by the descriptor.
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { ActionListEditor } from "./ActionListEditor.js";
 import { AutocompleteInput } from "./Autocomplete.js";
 import {
@@ -9,6 +16,7 @@ import {
   useExpressionField,
 } from "./ExpressionPicker.js";
 import { hasExpressions } from "./expression-tokens.js";
+import { isPropVisible } from "./validation.js";
 import type { BlockFormProp, SecretFormService, SecretStat } from "./forms.js";
 import { isEmptyValue } from "./validation.js";
 
@@ -129,6 +137,30 @@ function useResolvedProp<T>(
   }, [key, attempt]);
 
   return { state, reload: () => setAttempt((value) => value + 1) };
+}
+
+// Deferred: react-markdown's remark chain is a large graph, and most blocks
+// carry no markdown at all.
+const PieceMarkdown = lazy(() => import("./PieceMarkdown.js"));
+
+// Substituted when the endpoint is not available, rather than left as the raw
+// placeholder: an author must not be told to paste "{{webhookUrl}}".
+const NO_ENDPOINT = "[no endpoint yet — see Endpoint URL above]";
+
+// Activepieces writes its setup instructions as markdown carrying these
+// placeholders; unsubstituted, an author is told to paste "{{webhookUrl}}".
+export function fillPiecePlaceholders(
+  text: string,
+  values: { webhookUrl?: string; webhookTimeoutSeconds?: number },
+): string {
+  return text
+    .replace(/\{\{\s*webhookUrl\s*\}\}/g, values.webhookUrl ?? NO_ENDPOINT)
+    .replace(
+      /\{\{\s*webhookTimeoutSeconds\s*\}\}/g,
+      values.webhookTimeoutSeconds === undefined
+        ? "{{webhookTimeoutSeconds}}"
+        : String(values.webhookTimeoutSeconds),
+    );
 }
 
 // Marks controls whose runtime support has not landed yet.
@@ -525,6 +557,8 @@ function PropField(props: {
   refresherKey: string;
   // Inside an ARRAY item or DYNAMIC result: options cannot load yet.
   nested?: boolean;
+  // Substituted into MARKDOWN props; absent until the endpoint is minted.
+  webhookUrl?: string;
 }) {
   const { prop, value, onCommit } = props;
   const optionsUnavailable = Boolean(
@@ -664,14 +698,27 @@ function PropField(props: {
           />
         </FieldShell>
       );
-    case "MARKDOWN":
-      return (
-        <p className="whitespace-pre-wrap rounded bg-slate-100 px-2 py-1.5 text-xs text-slate-500">
-          {stringifyValue(
-            prop.description ?? prop.defaultValue ?? prop.displayName,
-          )}
-        </p>
+    case "MARKDOWN": {
+      const markdown = fillPiecePlaceholders(
+        stringifyValue(
+          prop.description ?? prop.defaultValue ?? prop.displayName,
+        ),
+        { webhookUrl: props.webhookUrl },
       );
+      // The fallback keeps the text readable while the chunk loads, rather
+      // than collapsing the panel's height and reflowing it.
+      return (
+        <Suspense
+          fallback={
+            <p className="whitespace-pre-wrap rounded bg-slate-100 px-2 py-1.5 text-xs text-slate-500">
+              {markdown}
+            </p>
+          }
+        >
+          <PieceMarkdown text={markdown} />
+        </Suspense>
+      );
+    }
     case "CHECKBOX":
       return (
         <label className="flex items-center gap-2 text-sm text-slate-700">
@@ -1119,6 +1166,8 @@ export function PropertyForm(props: {
   connectionId?: string;
   // Rendered inside another field; nested resolvers are not loadable yet.
   nested?: boolean;
+  // This workflow's endpoint URL, for a piece's setup markdown.
+  webhookUrl?: string;
 }) {
   // Track the latest committed config so sequential field edits accumulate;
   // derive-during-render resets it when the document value changes.
@@ -1137,25 +1186,56 @@ export function PropertyForm(props: {
     props.onChange(next);
   };
 
+  // A hidden field's value is not cleared: switching scheme to None and back
+  // must not silently discard the secret ref the author already minted.
+  const visible = props.props.filter((prop) => isPropVisible(prop, current));
+  const essential = visible.filter((prop) => !prop.advanced);
+  const advanced = visible.filter((prop) => prop.advanced);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  // Closed even when advanced fields hold values, so the count goes in the
+  // label — else config already in effect reads as config that is not there.
+  const advancedSet = advanced.filter(
+    (prop) => current[prop.name] !== undefined,
+  ).length;
+
+  const field = (prop: BlockFormProp) => (
+    <PropField
+      key={prop.name}
+      prop={prop}
+      value={current[prop.name] ?? prop.defaultValue}
+      onCommit={(value) => commitField(prop.name, value)}
+      loadOptions={
+        props.loadOptions
+          ? (propName) => props.loadOptions!(propName, current)
+          : undefined
+      }
+      secrets={props.secrets}
+      scopeStepId={props.scopeStepId}
+      refresherKey={refresherKeyFor(prop, current, props.connectionId)}
+      nested={props.nested}
+      webhookUrl={props.webhookUrl}
+    />
+  );
+
   return (
     <div className="flex flex-col gap-3">
-      {props.props.map((prop) => (
-        <PropField
-          key={prop.name}
-          prop={prop}
-          value={current[prop.name] ?? prop.defaultValue}
-          onCommit={(value) => commitField(prop.name, value)}
-          loadOptions={
-            props.loadOptions
-              ? (propName) => props.loadOptions!(propName, current)
-              : undefined
-          }
-          secrets={props.secrets}
-          scopeStepId={props.scopeStepId}
-          refresherKey={refresherKeyFor(prop, current, props.connectionId)}
-          nested={props.nested}
-        />
-      ))}
+      {essential.map(field)}
+      {advanced.length > 0 ? (
+        <div className="flex flex-col gap-3">
+          <button
+            type="button"
+            className="self-start text-[11px] font-medium text-slate-500 hover:text-slate-700"
+            aria-expanded={showAdvanced}
+            onClick={() => setShowAdvanced((open) => !open)}
+          >
+            {showAdvanced ? "▾" : "▸"} Advanced
+            {advancedSet > 0 ? ` · ${advancedSet} set` : ""}
+          </button>
+          <div hidden={!showAdvanced} className="flex flex-col gap-3">
+            {advanced.map(field)}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
