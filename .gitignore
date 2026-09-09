@@ -5,3 +5,4 @@ dist/
 *.log
 tsconfig.tsbuildinfo
 coverage/
+demo/.paperless-token

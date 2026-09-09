@@ -1,0 +1,104 @@
+# The two-service demo stack: a self-hosted docling-serve and a
+# paperless-ngx, both pointed at by the repo's first-party pieces
+# (packages/piece-docling, packages/piece-paperless-ngx).
+#
+#   docker compose -f demo/docker-compose.yml up -d
+#   node demo/seed.mjs          # waits for readiness, mints the paperless token
+#
+#   docker compose -f demo/docker-compose.yml down   # stop
+#   docker compose -f demo/docker-compose.yml down -v # stop + delete data
+#
+# Project name is explicit so this can never recreate another compose
+# project's containers by accident.
+#
+# --- versions ---------------------------------------------------------------
+# docling-serve is pinned to v1.32.0, the release the docling piece targets.
+# paperless-ngx is pinned to 2.18.4: that is the API line the paperless piece
+# (and its live e2e) was built and verified against. Paperless 3.0 removed
+# the API upload endpoint (POST /api/documents/ answers 405 there), which
+# breaks the piece's upload_document action — re-point at a 3.x tag only
+# once the piece supports that API.
+#
+# --- port choices -----------------------------------------------------------
+# docling-serve keeps its canonical 5001. paperless-ngx deliberately does
+# NOT take the usual 8000: if you already run a real paperless, a demo
+# instance must not shadow it. If 18000 is taken, change PAPERLESS_PORT and
+# the PAPERLESS_URL below to the same value and update the connection in
+# Connect accordingly.
+#
+# --- networking -------------------------------------------------------------
+# paperless runs on the host network on purpose. Its webhook action posts
+# deliveries back to the switchboard (a process on this machine); on a
+# bridge network that address is host.docker.internal, which many hosts
+# drop at the firewall. On the host netns both directions are plain
+# loopback. docling never calls out, so it stays on a normal bridge.
+#
+# --- storage ----------------------------------------------------------------
+# No PAPERLESS_DBHOST: the image then runs on its bundled SQLite in the
+# data volume, keeping the whole archive in one container. The volumes are
+# named, so deleting the containers keeps your documents; use `down -v`
+# for a clean slate.
+name: reactor-demo
+
+services:
+  docling:
+    image: ghcr.io/docling-project/docling-serve-cpu:v1.32.0
+    ports:
+      - "5001:5001"
+    # No DOCLING_SERVE_API_KEY: the demo runs unauthenticated, which the
+    # docling piece treats as "no key to send". Set one here and in the
+    # connection to demo the auth-gated paths.
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:5001/health', timeout=2)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+
+  paperless-broker:
+    image: docker.io/library/redis:7
+    network_mode: host
+    command: ["redis-server", "--port", "16379"]
+    restart: unless-stopped
+
+  paperless:
+    image: ghcr.io/paperless-ngx/paperless-ngx:2.18.4
+    network_mode: host
+    depends_on:
+      - paperless-broker
+    environment:
+      PAPERLESS_PORT: "18000"
+      PAPERLESS_REDIS: redis://localhost:16379
+      PAPERLESS_URL: http://localhost:18000
+      PAPERLESS_TIME_ZONE: UTC
+      PAPERLESS_OCR_LANGUAGE: eng
+      PAPERLESS_ADMIN_USER: admin
+      PAPERLESS_ADMIN_PASSWORD: paperless-demo
+      PAPERLESS_ADMIN_MAIL: admin@example.com
+      # Any value works for a throwaway instance, but do not reuse a
+      # real secret.
+      PAPERLESS_SECRET_KEY: demo-only-not-a-real-secret
+      # The webhook delivery target is loopback, which paperless counts as
+      # internal and refuses by default.
+      PAPERLESS_WEBHOOKS_ALLOW_INTERNAL_REQUESTS: "true"
+    volumes:
+      - reactor-demo-data:/usr/src/paperless/data
+      - reactor-demo-media:/usr/src/paperless/media
+      - reactor-demo-consume:/usr/src/paperless/consume
+      - reactor-demo-export:/usr/src/paperless/export
+      # The image feeds its s6-rc services the container env via
+      # with-contenv; if that materialization comes up empty (seen
+      # after container recreation), Django boots with defaults and
+      # token auth breaks. Mount the same values as s6-rc
+      # `environment` files so every service always has them.
+      - ./paperless.env:/etc/s6-overlay/s6-rc.d/svc-webserver/environment
+      - ./paperless.env:/etc/s6-overlay/s6-rc.d/svc-consumer/environment
+      - ./paperless.env:/etc/s6-overlay/s6-rc.d/svc-worker/environment
+      - ./paperless.env:/etc/s6-overlay/s6-rc.d/svc-scheduler/environment
+      - ./paperless.env:/etc/s6-overlay/s6-rc.d/svc-flower/environment
+
+volumes:
+  reactor-demo-data:
+  reactor-demo-media:
+  reactor-demo-consume:
+  reactor-demo-export:
