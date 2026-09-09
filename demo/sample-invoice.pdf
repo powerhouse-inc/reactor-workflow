@@ -1,0 +1,45 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 420 320] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>
+endobj
+5 0 obj
+<< /Length 835 >>
+stream
+BT /F1 11 Tf 20 270 Td (ACME Corporation - Invoice #2026-0912) Tj ET
+BT /F1 11 Tf 20 255 Td () Tj ET
+BT /F1 11 Tf 20 240 Td (Billed to: Reactor Workflow Labs) Tj ET
+BT /F1 11 Tf 20 225 Td (1 Docling Lane, Markdown City) Tj ET
+BT /F1 11 Tf 20 210 Td () Tj ET
+BT /F1 11 Tf 20 195 Td (Item                              Qty   Price) Tj ET
+BT /F1 11 Tf 20 180 Td (--------------------------------- ----  -------) Tj ET
+BT /F1 11 Tf 20 165 Td (Document conversion docling      1     42.00) Tj ET
+BT /F1 11 Tf 20 150 Td (Workflow automation powerhouse   1    100.00) Tj ET
+BT /F1 11 Tf 20 135 Td () Tj ET
+BT /F1 11 Tf 20 120 Td (Subtotal                          142.00) Tj ET
+BT /F1 11 Tf 20 105 Td (Total due EUR                   142.00) Tj ET
+BT /F1 11 Tf 20 90 Td () Tj ET
+BT /F1 11 Tf 20 75 Td (Please pay by the 15th. Thank you!) Tj ET
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000309 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1195
+%%EOF
