@@ -14,11 +14,22 @@ beforeAll(async () => {
 });
 afterAll(async () => await mock.close());
 
-it("enforces X-Api-Key when configured", async () => {
-  expect((await get("/health")).status).toBe(401);
-  const res = await fetch(mock.baseUrl + "/health", { headers: { "x-api-key": "k-test" } });
+it("gates the /v1 routes but leaves /health and /version open (v1 semantics)", async () => {
+  // Liveness endpoints are open even without a key.
+  expect((await get("/health")).status).toBe(200);
+  expect((await get("/version")).status).toBe(200);
+  // A key is required on the real /v1 routes: missing → 401.
+  expect((await get("/v1/convert/source")).status).toBe(401);
+  // ...and a correct one passes the gate to the sync handler.
+  const res = await fetch(mock.baseUrl + "/v1/convert/source", {
+    method: "POST",
+    headers: { "x-api-key": "k-test", "content-type": "application/json" },
+    body: JSON.stringify({
+      sources: [{ kind: "file", base64_string: "AAAA", filename: "a.pdf" }],
+      options: { to_formats: ["md"] },
+    }),
+  });
   expect(res.status).toBe(200);
-  expect((await res.json()) as unknown).toEqual({ status: "ok" });
 });
 
 it("serves /version with the real 1.32.0 hyphenated key set", async () => {

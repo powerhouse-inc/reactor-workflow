@@ -14,6 +14,32 @@ export function authKeyHeaders(apiKey?: string): Record<string, string> {
   return apiKey ? { "x-api-key": apiKey } : {};
 }
 
+// v1.32.0 auth-gates only the /v1/* routes; /health and /version stay open,
+// so a wrong key passes plain liveness calls. This probe hits a gated
+// route: a bad (or missing, when the server requires one) key is 401, a
+// good key is 404 (unknown task) — any non-401 answer means the key was
+// accepted. The pinned pieces-common 0.12.5 httpClient throws on any
+// non-2xx (401 included), so both the resolved and thrown paths are read.
+export async function probeApiKey(
+  base: string,
+  key?: string,
+): Promise<"auth" | "ok" | "unreachable"> {
+  try {
+    const res = await httpClient.sendRequest({
+      method: HttpMethod.GET,
+      url: `${base}/v1/status/poll/connection-check`,
+      headers: authKeyHeaders(key),
+      timeout: 10_000,
+      retries: 0,
+    });
+    return res.status === 401 ? "auth" : "ok";
+  } catch (err) {
+    if (err !== null && typeof err === "object" && "status" in err) {
+      return err.status === 401 ? "auth" : "ok";
+    }
+    return "unreachable";
+  }
+}
 export const doclingAuth = PieceAuth.CustomAuth({
   displayName: "Docling Serve",
   description:
@@ -40,11 +66,12 @@ export const doclingAuth = PieceAuth.CustomAuth({
   // the shaped { type, props } object only exists on runtime ctx.auth.
   validate: async ({ auth }) => {
     const base = normalizeBaseUrl(auth.base_url);
+    const key = typeof auth.api_key === "string" ? auth.api_key : undefined;
     try {
       const res = await httpClient.sendRequest({
         method: HttpMethod.GET,
         url: `${base}/health`,
-        headers: authKeyHeaders(typeof auth.api_key === "string" ? auth.api_key : undefined),
+        headers: authKeyHeaders(key),
         timeout: 10_000,
         retries: 0,
       });
@@ -53,6 +80,13 @@ export const doclingAuth = PieceAuth.CustomAuth({
       }
       if (res.status < 200 || res.status >= 300) {
         return { valid: false, error: `Server responded ${res.status}.` };
+      }
+      const probeResult = await probeApiKey(base, key);
+      if (probeResult === "auth") {
+        return { valid: false, error: "The API key was rejected by the server (401)." };
+      }
+      if (probeResult === "unreachable") {
+        return { valid: false, error: `Could not reach docling-serve at ${base}.` };
       }
       return { valid: true };
     } catch (err) {

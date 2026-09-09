@@ -1,6 +1,6 @@
 import { createPiece } from "@activepieces/pieces-framework";
 import { PieceCategory } from "@activepieces/shared";
-import { doclingAuth, authFromCtx, authKeyHeaders } from "./lib/auth.js";
+import { doclingAuth, authFromCtx, authKeyHeaders, probeApiKey } from "./lib/auth.js";
 import { DoclingError } from "./lib/errors.js";
 import { httpClient, HttpMethod } from "@activepieces/pieces-common";
 import { healthAction } from "./lib/actions/health.js";
@@ -56,6 +56,19 @@ docling.checkConnection = async (ctx: unknown) => {
     if (res.status < 200 || res.status >= 300) {
       throw new DoclingError("JOB_FAILED", `docling-serve responded ${res.status}.`);
     }
+    // /health and /version are open on v1; the key is only checked on the
+    // /v1/* routes, so a wrong key passes the call above. Probe a gated
+    // route before reporting the connection healthy.
+    const probe = await probeApiKey(baseUrl, apiKey);
+    if (probe === "auth") {
+      throw new DoclingError("AUTH", "The API key was rejected by the server (401).");
+    }
+    if (probe === "unreachable") {
+      throw new DoclingError(
+        "JOB_FAILED",
+        `Could not reach docling-serve at ${baseUrl}.`,
+      );
+    }
     const version = await httpClient.sendRequest({
       method: HttpMethod.GET,
       url: `${baseUrl}/version`,
@@ -79,13 +92,10 @@ docling.checkConnection = async (ctx: unknown) => {
     }
     throw new DoclingError(
       "JOB_FAILED",
-      `Could not reach docling-serve at ${baseUrl}. ${(err as Error)?.message ?? String(err)}`,
+      `Could not reach docling-serve at ${baseUrl}. ${(err as Error).message ?? String(err)}`,
     );
   }
-}; // The framework's Piece type has no checkConnection member — the shim is
-   // typed through the widened declaration above rather than the brief's
-   // `as never` (a block-bodied arrow cannot take an `as` suffix; the
-   // esbuild bundle step rejects it). The reactor's loader duck-types it.
+};
 
 export { docling };
 export default docling;

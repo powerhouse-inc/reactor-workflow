@@ -96,11 +96,10 @@ export async function startMockDocling(opts: MockDoclingOptions = {}): Promise<M
       headers: req.headers as Record<string, string | string[]>,
     });
 
-    if (opts.failAuthAlways || (opts.apiKey && req.headers["x-api-key"] !== opts.apiKey)) {
-      return json(res, 401, { detail: "Invalid API Key." });
-    }
-
     const p = url.pathname;
+    // Match v1.32.0: /health and /version are open, only /v1/* is
+    // key-gated. The probe route (/v1/status/poll/… with an unknown id)
+    // falls through to the 404 below — the correct "key accepted" signal.
     if (req.method === "GET" && p === "/health") return json(res, 200, { status: "ok" });
     if (req.method === "GET" && p === "/version") {
       // Key set mirrors the real 1.32.0 DOCLING_VERSIONS, including the
@@ -114,6 +113,12 @@ export async function startMockDocling(opts: MockDoclingOptions = {}): Promise<M
         python: "3.11.9",
         plaform: "linux",
       });
+    }
+
+    // The real v1.32.0 gates only the /v1/* routes on the API key; the
+    // root-level diagnostics above stay open.
+    if (opts.failAuthAlways || (opts.apiKey && req.headers["x-api-key"] !== opts.apiKey)) {
+      return json(res, 401, { detail: "Invalid API Key." });
     }
 
     let body: {

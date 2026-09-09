@@ -2,6 +2,7 @@ import { doclingAuth, authFromCtx } from "../src/lib/auth.js";
 import { startMockDocling } from "./mock-docling-serve.js";
 import type { MockDocling } from "./mock-docling-serve.js";
 import { healthAction } from "../src/lib/actions/health.js";
+import { convertFileAction } from "../src/lib/actions/convert-file.js";
 import { makeActionContext } from "./mock-context.js";
 import { startMockDocling as startMock2 } from "./mock-docling-serve.js";
 
@@ -72,13 +73,19 @@ describe("health action", () => {
     }
   });
 
-  it("throws a typed AUTH error on 401", async () => {
+  // v1 gates only the /v1/* routes; /health stays open, so a wrong key
+  // only surfaces on a real (gated) request. The convert action is the
+  // canonical one: its client maps the 401 to the AUTH kind.
+  it("convert_file with a rejected key throws a typed AUTH error", async () => {
     const mock = await startMock2({ apiKey: "k-test" });
     try {
       await expect(
-        healthAction.run(
+        convertFileAction.run(
           makeActionContext(
-            {},
+            {
+              file: { filename: "x.pdf", data: Buffer.from("x") },
+              ocr: false,
+            },
             { type: "CUSTOM_AUTH", props: { base_url: mock.baseUrl, api_key: "nope" } },
           ) as never,
         ),

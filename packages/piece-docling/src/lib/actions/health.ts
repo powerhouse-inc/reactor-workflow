@@ -9,7 +9,7 @@ export const healthAction = createAction({
   name: "health",
   displayName: "Check Health",
   description:
-    "Checks the docling-serve connection (GET /health and /version). Use as a pre-flight step.",
+    "Reports the docling-serve service state (GET /health and /version). Note: v1 servers keep those routes open, so this does not verify the API key — a wrong key only fails on the first real request (or the connection check).",
   audience: "both",
   aiMetadata: {
     description: "Verifies the docling-serve endpoint is reachable and returns its component versions.",
