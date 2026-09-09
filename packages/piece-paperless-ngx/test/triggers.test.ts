@@ -346,8 +346,11 @@ describe("run", () => {
     // 04:00-05:00 is 09:00Z — later than the cursor as an instant, but lower
     // than it as a string, which is what made the old compare stick.
     await store.put("paperless:sweep-cursor", "2026-09-02T08:30:00.000Z");
-    const later = mock.seedDocument({ added: "2026-09-02T04:00:00-05:00" });
-    expect("2026-09-02T04:00:00-05:00" > "2026-09-02T08:30:00.000Z").toBe(false);
+    const added = "2026-09-02T04:00:00-05:00";
+    const cursor = String(store.entries.get("paperless:sweep-cursor"));
+    const later = mock.seedDocument({ added });
+    expect(added > cursor).toBe(false);
+    expect(Date.parse(added) > Date.parse(cursor)).toBe(true);
 
     const items = (await runHook(newDocument, "run", {
       auth: authFor(mock),

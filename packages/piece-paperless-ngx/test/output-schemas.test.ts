@@ -202,7 +202,7 @@ describe("output schemas", () => {
     expect(describedKeys(fieldsOf(described[10]))).toEqual(keys);
   });
 
-  it("describes upload's own keys and the nested document", async () => {
+  it("describes upload's own keys and the nested document", () => {
     const keys = describedKeys(fieldsOf(described[0]));
     for (const key of ["task_id", "status", "document_id", "adopted", "timed_out", "document"]) {
       expect(keys, `upload_document ${key}`).toContain(key);

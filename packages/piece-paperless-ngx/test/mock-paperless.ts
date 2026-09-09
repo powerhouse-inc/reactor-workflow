@@ -671,10 +671,11 @@ function serializeTask(task: MockTask, version: number): Record<string, unknown>
       task_name: task.task_type,
       type: "auto_task",
       task_file_name: task.input_data?.filename ?? null,
+      // 2.18 answers a *string* id, which is what normalizeTask coerces.
       related_document:
-        task.related_document_ids[0] === undefined
-          ? null
-          : String(task.related_document_ids[0]),
+        task.related_document_ids.length > 0
+          ? String(task.related_document_ids[0])
+          : null,
     };
   }
   return {
@@ -726,7 +727,7 @@ export function parseMultipart(
   const type = Array.isArray(contentType) ? contentType[0] : contentType;
   const boundary = /boundary=(?:"([^"]+)"|([^;]+))/.exec(type ?? "");
   if (!boundary) return [];
-  const marker = Buffer.from(`--${boundary[1] ?? boundary[2]}`);
+  const marker = Buffer.from(`--${boundary[1] || boundary[2]}`);
   const parts: MultipartPart[] = [];
   let cursor = raw.indexOf(marker);
   while (cursor !== -1) {

@@ -47,6 +47,9 @@ export const findOrCreateObject = createAction({
       displayName: "Details",
       required: false,
       refreshers: ["object_type"],
+      // DynamicPropsValue requires a Promise return, so this stays
+      // async even though the branches are all synchronous.
+      // oxlint-disable-next-line require-await
       props: async ({ object_type }): Promise<InputPropertyMap> => {
         switch (String(object_type) as ObjectKind) {
           case "tags":

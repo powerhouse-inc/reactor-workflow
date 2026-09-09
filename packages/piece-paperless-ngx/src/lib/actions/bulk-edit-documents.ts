@@ -59,6 +59,9 @@ export const bulkEditDocuments = createAction({
       displayName: "Parameters",
       required: true,
       refreshers: ["method"],
+      // DynamicPropsValue requires a Promise return, so this stays
+      // async even though the branches are all synchronous.
+      // oxlint-disable-next-line require-await
       props: async ({ method }): Promise<InputPropertyMap> => {
         switch (String(method) as Method) {
           case "set_correspondent":
@@ -143,7 +146,7 @@ export const bulkEditDocuments = createAction({
       json: { documents: ids, method, parameters },
     });
     return {
-      result: response.data?.result ?? "OK",
+      result: response.data.result ?? "OK",
       documents: ids,
       method,
     };
