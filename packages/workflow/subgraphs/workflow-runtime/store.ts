@@ -76,12 +76,26 @@ export interface WebhookEndpointRow {
   delivery_count: number;
 }
 
+// One key a piece wrote through `ctx.store` during an action. Triggers persist
+// theirs as `trigger_state.store_state`; actions had nowhere to put it.
+
+// `scope` mirrors their StoreScope. PROJECT is meant to span a project's
+// workflows, which we have no identity for, so it is stored per workflow too.
+export interface PieceStoreRow {
+  scope: string; // FLOW | PROJECT
+  scope_key: string;
+  key: string;
+  value: string; // JSON
+  updated_at: string;
+}
+
 export interface WorkflowRuntimeDB {
   run: RunRow;
   step_execution: StepExecutionRow;
   trigger_state: TriggerStateRow;
   trigger_dedupe: TriggerDedupeRow;
   webhook_endpoint: WebhookEndpointRow;
+  piece_store: PieceStoreRow;
 }
 
 async function up(db: IRelationalDb<WorkflowRuntimeDB>): Promise<void> {
@@ -162,6 +176,48 @@ async function up(db: IRelationalDb<WorkflowRuntimeDB>): Promise<void> {
     .addColumn("error", "text")
     .ifNotExists()
     .execute();
+
+  await db.schema
+    .createTable("piece_store")
+    .addColumn("scope", "text", (col) => col.notNull())
+    .addColumn("scope_key", "text", (col) => col.notNull())
+    .addColumn("key", "text", (col) => col.notNull())
+    .addColumn("value", "text", (col) => col.notNull())
+    .addColumn("updated_at", "text", (col) => col.notNull())
+    .addPrimaryKeyConstraint("piece_store_pk", ["scope", "scope_key", "key"])
+    .ifNotExists()
+    .execute();
+}
+
+// Their own ceilings (STORE_KEY_MAX_LENGTH, STORE_VALUE_MAX_SIZE), so a piece
+// that behaves on Activepieces behaves here. Enforced on the host, not the child.
+export const PIECE_STORE_MAX_KEY_LENGTH = 128;
+export const PIECE_STORE_MAX_VALUE_BYTES = 512 * 1024;
+
+export class PieceStoreLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PieceStoreLimitError";
+  }
+}
+
+function assertPieceStoreEntry(key: string, value: unknown): void {
+  if (key.length === 0 || key.length > PIECE_STORE_MAX_KEY_LENGTH) {
+    throw new PieceStoreLimitError(
+      `Store key must be 1-${PIECE_STORE_MAX_KEY_LENGTH} characters, got ${key.length}`,
+    );
+  }
+  // stringify yields undefined for functions/symbols despite its typing.
+  const encoded = JSON.stringify(value) as string | undefined;
+  if (encoded === undefined) {
+    throw new PieceStoreLimitError(`Store value for "${key}" is not JSON`);
+  }
+  const size = Buffer.byteLength(encoded, "utf8");
+  if (size > PIECE_STORE_MAX_VALUE_BYTES) {
+    throw new PieceStoreLimitError(
+      `Store value for "${key}" is ${size} bytes, over the ${PIECE_STORE_MAX_VALUE_BYTES} byte limit`,
+    );
+  }
 }
 
 function jsonOrNull(value: unknown): string | null {
@@ -481,6 +537,109 @@ export class WorkflowRunStore {
       .set({ run_id: runId })
       .where("workflow_id", "=", workflowId)
       .where("dedupe_key", "=", dedupeKey)
+      .execute();
+  }
+
+  async getPieceStoreValue(
+    scope: string,
+    scopeKey: string,
+    key: string,
+  ): Promise<unknown> {
+    const row = await this.db
+      .selectFrom("piece_store")
+      .select("value")
+      .where("scope", "=", scope)
+      .where("scope_key", "=", scopeKey)
+      .where("key", "=", key)
+      .executeTakeFirst();
+    if (!row) return null;
+    try {
+      return JSON.parse(row.value);
+    } catch {
+      // A row we cannot parse is a row we cannot honour; the piece sees the
+      // key as absent and the next write replaces it.
+      return null;
+    }
+  }
+
+  async setPieceStoreValue(
+    scope: string,
+    scopeKey: string,
+    key: string,
+    value: unknown,
+  ): Promise<void> {
+    assertPieceStoreEntry(key, value);
+    const encoded = JSON.stringify(value);
+    const nowIso = new Date().toISOString();
+    const existing = await this.db
+      .selectFrom("piece_store")
+      .select("key")
+      .where("scope", "=", scope)
+      .where("scope_key", "=", scopeKey)
+      .where("key", "=", key)
+      .executeTakeFirst();
+    if (existing) {
+      await this.db
+        .updateTable("piece_store")
+        .set({ value: encoded, updated_at: nowIso })
+        .where("scope", "=", scope)
+        .where("scope_key", "=", scopeKey)
+        .where("key", "=", key)
+        .execute();
+      return;
+    }
+    await this.db
+      .insertInto("piece_store")
+      .values({
+        scope,
+        scope_key: scopeKey,
+        key,
+        value: encoded,
+        updated_at: nowIso,
+      })
+      .execute();
+  }
+
+  async deletePieceStoreValue(
+    scope: string,
+    scopeKey: string,
+    key: string,
+  ): Promise<void> {
+    await this.db
+      .deleteFrom("piece_store")
+      .where("scope", "=", scope)
+      .where("scope_key", "=", scopeKey)
+      .where("key", "=", key)
+      .execute();
+  }
+
+  // Every key one scope holds; for inspection and for tearing a workflow down.
+  async listPieceStore(
+    scope: string,
+    scopeKey: string,
+  ): Promise<Record<string, unknown>> {
+    const rows = await this.db
+      .selectFrom("piece_store")
+      .selectAll()
+      .where("scope", "=", scope)
+      .where("scope_key", "=", scopeKey)
+      .execute();
+    const out: Record<string, unknown> = {};
+    for (const row of rows) {
+      try {
+        out[row.key] = JSON.parse(row.value);
+      } catch {
+        // Same reasoning as the single-key read above.
+      }
+    }
+    return out;
+  }
+
+  async deletePieceStore(scope: string, scopeKey: string): Promise<void> {
+    await this.db
+      .deleteFrom("piece_store")
+      .where("scope", "=", scope)
+      .where("scope_key", "=", scopeKey)
       .execute();
   }
 }

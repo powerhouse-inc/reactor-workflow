@@ -59,6 +59,7 @@ import {
   createAttachmentPort,
   type AttachmentClientLike,
 } from "./attachment-port.js";
+import { createPieceStorePort } from "./piece-store-port.js";
 import { currentWorkflowId, withRunScope } from "./run-scope.js";
 import {
   constantTimeEqual,
@@ -1278,13 +1279,16 @@ export class WorkflowRuntimeService {
       );
     }
     const definition = toWorkflowDefinition(state);
+    const store = await this.store();
+    // Without a journal there is nowhere durable to keep ctx.store, so the
+    // executor falls back to the worker's heap.
     this.executor ??= createBlockExecutor(
       this.subgraph,
       this.secretProvider(),
       this.attachments,
+      store ? createPieceStorePort(store, currentWorkflowId) : undefined,
     );
 
-    const store = await this.store();
     const runId =
       (await store?.startRun({
         workflowId,
