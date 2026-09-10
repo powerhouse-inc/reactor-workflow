@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  buildWebhookQuery,
+  buildWebhookParams,
   documentUpdated,
   newDocument,
   splitWebhookUrl,
@@ -45,17 +45,25 @@ describe("splitWebhookUrl", () => {
 });
 
 describe("the registered Jinja payload", () => {
-  it("interpolates doc_id and nothing else, with no accidental brace pair", () => {
-    const query = buildWebhookQuery("DOCUMENT_ADDED");
-    const placeholders = query.match(/\{\{/g) ?? [];
+  it("interpolates doc_id and nothing else", () => {
+    const params = buildWebhookParams("DOCUMENT_ADDED");
+    const rendered = JSON.stringify(params);
+    const placeholders = rendered.match(/\{\{/g) ?? [];
 
+    expect(params.doc_id).toBe("{{doc_id}}");
+    expect(params.event).toBe("DOCUMENT_ADDED");
     expect(placeholders).toHaveLength(1);
-    expect(query).toContain("{{doc_id}}");
     // Every known paperless placeholder renders as a raw string, so any of
     // these would let a document title break the JSON body.
     for (const unsafe of ["doc_title", "correspondent", "filename", "doc_url"]) {
-      expect(query).not.toContain(unsafe);
+      expect(rendered).not.toContain(unsafe);
     }
+  });
+
+  it("carries no GraphQL, since the endpoint is a plain webhook", () => {
+    const rendered = JSON.stringify(buildWebhookParams("DOCUMENT_ADDED"));
+    expect(rendered).not.toContain("mutation");
+    expect(rendered).not.toContain("fireWebhook");
   });
 });
 
@@ -105,7 +113,10 @@ describe("onEnable", () => {
       include_document: false,
       headers: { "X-Powerhouse-Webhook-Token": "tok-abc" },
     });
-    expect((webhook.params as { query: string }).query).toContain("{{doc_id}}");
+    expect(webhook.params).toEqual({
+      doc_id: "{{doc_id}}",
+      event: "DOCUMENT_ADDED",
+    });
 
     expect(store.entries.get("paperless:webhook-registration")).toMatchObject({
       workflow_id: workflow.id,
