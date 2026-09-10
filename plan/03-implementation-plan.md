@@ -44,7 +44,7 @@ schema is committed.
 |---|---|---|
 | **S1 — new module kind** | Can a fifth module subpath be loaded, hot-reloaded and listed end-to-end? | A local package exports `connectors/index.ts`; `PackageManager` loads it; editing the file re-emits `connectorsChange`; `GET /packages` shows the connectors key |
 | **S2 — worker + host bridge** | Can a worker import a connector by `ModuleRef` and call back into the host for a reactor write? | A worker thread imports `pkg/connectors`, runs an action, calls `hostBridge.reactor.execute(...)` over the message channel, and the operation lands |
-| **S3 — raw webhook route** | Does `mountNodeRoute` give byte-exact bodies under both Express and Fastify adapters? | The `recipes/inbound-webhook-bridge` HMAC verifier passes when mounted inside `reactor-api`, on both adapters |
+| **S3 — raw webhook route** ✅ **answered** | Does `mountNodeRoute` give byte-exact bodies under both Express and Fastify adapters? | **No — and in opposite ways per adapter.** Express's body-parser only reads matching content types, so `application/octet-stream` arrived untouched with `req.body === {}`, while Fastify 415s an unknown type outright. Raw bodies are now an opt-in *guarantee* of both adapters: see [`10-http-routes-spec.md`](./10-http-routes-spec.md) §2.1 |
 | **S4 — embedded queue on PGlite** | Can a lease/visibility-timeout queue work without `SKIP LOCKED`? | 4 concurrent reservers over 1000 jobs on PGlite: no double delivery, no lost job, acceptable throughput (target ≥ 200 jobs/s) |
 
 **Exit.** A short `workflow-automation/spike-notes.md` recording what worked, what the real
@@ -336,9 +336,14 @@ src/triggers/
 
 ### 5.2 HTTP wiring
 
-`packages/reactor-api/src/server.ts` — mount `POST /workflows/hooks/:token` with
-`httpAdapter.mountNodeRoute`, and a `GET /workflows/health` returning supervisor status. Test on
-**both** the Express and Fastify adapters.
+**Superseded by [`10-http-routes-spec.md`](./10-http-routes-spec.md).** The
+workflow package mounts nothing itself: core owns `/webhooks/:token` and hands
+the package a namespaced `IHttpScope`, so the path family is
+`/webhooks/<token>` rather than `/workflows/hooks/:token`, and the token is
+minted by the service rather than by the package. Everything below that a
+package would still add — a health route, say — goes through
+`subgraph.http`, never `httpAdapter.mountNodeRoute`. Still tested on **both**
+adapters, via the layer-0 conformance suite (doc 10 §2.5).
 
 **Exit criteria.** A schedule trigger fires on time across a restart; a poll trigger ingests a mock
 feed with a redelivery and an out-of-order event without duplicating a run; a signed webhook starts a

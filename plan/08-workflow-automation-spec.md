@@ -455,10 +455,18 @@ declaring `runtimes: ["connect"]`. Everything else is greyed out with "requires 
 - **Cursor + dedup**: `trigger_state` and `trigger_dedup` with TTL. The cursor is a fetch
   optimisation; `dedupKey` is authoritative. An adapted piece's `pollingHelper` output is mapped to a
   `dedupKey` by the adapter.
-- **Webhooks**: `POST /workflows/hooks/:endpointToken` mounted raw via `IHttpAdapter.mountNodeRoute`,
-  so the handler owns the bytes. Verify raw → parse → `toEnvelopes` → dedup → enqueue. Unverified
-  requests get a constant-time 401. Per-endpoint token bucket. Webhook **renewal** is supported
-  (`onRenew` + a CRON renew strategy) for providers whose subscriptions expire.
+- **Webhooks**: `/webhooks/:token`, owned by core and reached through the package's
+  `IHttpScope` — see [`10-http-routes-spec.md`](./10-http-routes-spec.md), which
+  supersedes this bullet's transport half. The pipeline is unchanged in substance
+  (verify raw → parse → dedup → enqueue) but core performs all of it before the
+  handler runs: token lookup, the signature schemes with constant-time
+  comparison, the replay window, dedupe, the challenge echo, header redaction,
+  the body cap and the per-endpoint token bucket. Unverified requests get a
+  constant-time 401, and an unknown token, a malformed token and a disarmed
+  endpoint answer identically. What the workflow package contributes is which
+  document a delivery belongs to and what running it means. Webhook **renewal**
+  is supported (`onRenew` + a CRON renew strategy) for providers whose
+  subscriptions expire.
 - **App webhooks**: one shared endpoint per connector, demultiplexed to trigger instances by an
   identifier declared through `ctx.app.createListeners`. Required by providers that permit only one
   webhook per app; 4 pieces use it today.
@@ -678,8 +686,9 @@ availability and signing cost are a shared concern, not a workflow-only one.
 
 **Switchboard / `reactor-api`.** Composed in `startServer` next to `ProcessorManager`, gated by a
 `PHWorkflowConfig` block (`enabled`, `queue.driver`, `workers.count`, `egress`, `secrets.provider`,
-`attester`). Mounts `POST /workflows/hooks/:token` (raw), the shared app-webhook endpoint, and
-`GET /workflows/health`. A new `workflows` subgraph reusing `assertCan*` so visibility follows
+`attester`). Registers its webhook endpoint family and the shared app-webhook
+endpoint through `subgraph.http` rather than mounting anything itself (doc 10
+§5.1), plus `GET /workflows/health`. A new `workflows` subgraph reusing `assertCan*` so visibility follows
 document ACLs, with `resolveDomain` added to the main schema rather than the subgraph.
 
 **Connect.** Editors for `powerhouse/workflow`, `powerhouse/connection` and `powerhouse/workflow-run`;
