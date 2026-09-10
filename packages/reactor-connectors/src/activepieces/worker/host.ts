@@ -10,6 +10,9 @@ import type {
 import type {
   CheckConnectionRequest,
   DescribePieceRequest,
+  HostCallHandlers,
+  HostCallMessage,
+  HostCallResponse,
   ResolveOptionsRequest,
   RunActionRequest,
   SerializedPieceError,
@@ -105,9 +108,9 @@ export class PieceWorker {
   // Runs are serialized per worker; a pool composes multiple workers later.
   runAction(
     request: RunActionRequest,
-    options: { timeoutMs?: number } = {},
+    options: { timeoutMs?: number; hostCalls?: HostCallHandlers } = {},
   ): Promise<PieceWorkerResult> {
-    return this.enqueue("run", request, options.timeoutMs);
+    return this.enqueue("run", request, options.timeoutMs, options.hostCalls);
   }
 
   // Design-time DROPDOWN options() / DYNAMIC props() resolution.
@@ -147,9 +150,10 @@ export class PieceWorker {
     type: WorkerRequestType,
     request: WorkerRequest,
     timeoutMs?: number,
+    hostCalls?: HostCallHandlers,
   ): Promise<PieceWorkerResult> {
     const run = this.queue.then(() =>
-      this.execute(type, request, timeoutMs ?? this.defaultTimeoutMs),
+      this.execute(type, request, timeoutMs ?? this.defaultTimeoutMs, hostCalls),
     );
     this.queue = run.catch(() => undefined);
     return run;
@@ -180,6 +184,7 @@ export class PieceWorker {
     type: WorkerRequestType,
     request: WorkerRequest,
     timeoutMs: number,
+    hostCalls?: HostCallHandlers,
   ): Promise<PieceWorkerResult> {
     const child = this.spawn();
     const id = this.nextId++;
@@ -192,7 +197,9 @@ export class PieceWorker {
         reject(new PieceWorkerTimeoutError(timeoutMs));
       }, timeoutMs);
 
-      const onMessage = (response: WorkerResponse) => {
+      const onMessage = (response: WorkerResponse | HostCallMessage) => {
+        // Ids come from two counters; dispatch on type before comparing them.
+        if (response.type === "host-call") return;
         if (response.id !== id) return;
         cleanup();
         if (response.type === "result") {
@@ -215,15 +222,53 @@ export class PieceWorker {
         reject(new PieceWorkerExitError(code, signal));
       };
 
+      // Served outside the request queue: the queue is held by this very
+      // request, so routing a call through it would deadlock the step.
+      const onHostCall = (message: WorkerResponse | HostCallMessage) => {
+        if (message.type !== "host-call") return;
+        void this.serveHostCall(child, message, hostCalls);
+      };
+
       const cleanup = () => {
         clearTimeout(timer);
         child.off("message", onMessage);
+        child.off("message", onHostCall);
         child.off("exit", onExit);
       };
 
       child.on("message", onMessage);
+      child.on("message", onHostCall);
       child.on("exit", onExit);
       child.send({ id, type, request });
     });
+  }
+
+  // Answers one call from the child. The handler set belongs to the request in
+  // flight, so a call arriving after the step returned is refused, not served.
+  private async serveHostCall(
+    child: ChildProcess,
+    message: HostCallMessage,
+    handlers: HostCallHandlers | undefined,
+  ): Promise<void> {
+    let response: HostCallResponse;
+    try {
+      const handler = handlers?.[message.method];
+      if (!handler) {
+        throw new Error(`No host handler for "${message.method}"`);
+      }
+      response = {
+        id: message.id,
+        type: "host-result",
+        value: await handler(message.payload),
+      };
+    } catch (error) {
+      response = {
+        id: message.id,
+        type: "host-result",
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+    // A worker killed on timeout takes its pending calls with it.
+    if (child.connected) child.send(response);
   }
 }
