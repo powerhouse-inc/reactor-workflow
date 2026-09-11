@@ -284,10 +284,18 @@ listen(port, tls?)
 handle                                                  // the raw framework app
 ```
 
-Express and Fastify adapters both implement it. **`mountNodeRoute` is what a webhook trigger must
-use**: HMAC verification requires the exact bytes the provider sent, and every Fetch/GraphQL path
-parses the body first. `packages/reactor-mcp/src/mcp-routes.ts` is the existing precedent — it
-mounts three node routes for the streamable-HTTP MCP transport.
+Express and Fastify adapters both implement it. `packages/reactor-mcp/src/mcp-routes.ts` is the
+existing precedent — it mounts three node routes for the streamable-HTTP MCP transport.
+
+> **Superseded by [`10-http-routes-spec.md`](./10-http-routes-spec.md).** This section said
+> `mountNodeRoute` "is what a webhook trigger must use", on the reasoning that HMAC verification
+> needs the exact bytes. The reasoning holds; the conclusion did not. `mountNodeRoute` did **not**
+> deliver byte-exact bodies, and failed differently on each adapter: Express's body-parser only reads
+> matching content types, so an unmatched type arrived untouched but a matched one arrived
+> re-encoded, while Fastify rejected an unknown type with 415 before the handler ran. Raw bodies are
+> now an explicit opt-in guarantee of both adapters, and a package no longer touches `IHttpAdapter`
+> at all — it receives a namespaced `IHttpScope`. The signatures listed above have also changed:
+> registrations return disposable handles. Doc 10 §2 is authoritative.
 
 Existing routes: `/health`, `/ready`, `/explorer/:endpoint?`, per-drive GraphQL, per-subgraph
 GraphQL, the composed supergraph, and an SSE channel (`graphql-manager.ts:858`).
@@ -713,7 +721,7 @@ OS-level triggers ("a file appeared", "the user double-clicked something") reach
 | Cursor persistence + backfill + errored/retry lifecycle | `powerhouse/packages/reactor/src/processors/processor-manager.ts` |
 | Filter matching | `powerhouse/packages/reactor/src/processors/utils.ts` |
 | Namespaced relational storage + migrations | `powerhouse/packages/shared/processors/relational/types.ts` |
-| Raw-body HTTP routes | `IHttpAdapter.mountNodeRoute`; precedent `powerhouse/packages/reactor-mcp/src/mcp-routes.ts` |
+| Raw-body HTTP routes | `IHttpScope` (`body: "raw"`) — **not** `IHttpAdapter.mountNodeRoute`, which was never byte-exact; see doc 10 §2.1 |
 | GraphQL surface + per-request permission memo | `powerhouse/packages/reactor-api/src/graphql/base-subgraph.ts` |
 | Attachment fetch with document authorization | `powerhouse/packages/reactor-attachments` |
 | Declared config/secrets | `ConfigEntrySchema` on the manifest |

@@ -62,6 +62,13 @@ export const schema: DocumentNode = gql`
     """
     connections: [ConnectionRecord!]!
     """
+    The webhook endpoint for a workflow: the URL to hand the provider. Minted
+    on first ask, whether or not the workflow is armed — an author needs the
+    URL before enabling, and the armed field carries that difference. Null
+    only when the host has no webhook service.
+    """
+    webhookEndpoint(workflowId: String!): WebhookEndpointRecord
+    """
     Secret metadata (label, version, status). Never the value.
     """
     secret(ref: String!): SecretRecord
@@ -111,6 +118,19 @@ export const schema: DocumentNode = gql`
     ok: Boolean!
     detail: String
     accountLabel: String
+  }
+
+  type WebhookEndpointRecord {
+    workflowId: String!
+    url: String!
+    """
+    False when the reactor does not know its own public origin, so the url
+    above is a bare path no provider can call: the author supplies the origin.
+    """
+    absoluteUrl: Boolean!
+    "True while the workflow is ENABLED with a valid webhook trigger"
+    armed: Boolean!
+    createdAt: String!
   }
 
   type TriggerStateRecord {
@@ -207,23 +227,6 @@ export const schema: DocumentNode = gql`
     credentials and records the outcome on the connection document.
     """
     checkConnection(connectionId: String!): ConnectionCheckResult!
-    """
-    Ingress for a provider's outbound webhook. The delivery token belongs in
-    the X-Powerhouse-Webhook-Token header; the argument exists for providers
-    that cannot set one. Verifies, rate-limits and enqueues, then answers —
-    the run happens after the response, because providers time out fast
-    (paperless allows five seconds and never retries a transport error).
-    """
-    fireWebhook(payload: Unknown, token: String): FireWebhookResult!
-  }
-
-  type FireWebhookResult {
-    accepted: Boolean!
-    """
-    Why a delivery was not accepted. Deliberately coarse: a provider must not
-    be able to tell an unknown token from a disabled trigger.
-    """
-    reason: String
   }
 
   type Mutation {

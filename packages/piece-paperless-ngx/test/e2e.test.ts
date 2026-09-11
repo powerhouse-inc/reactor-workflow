@@ -145,8 +145,9 @@ describe.skipIf(!baseUrl)("live paperless-ngx", () => {
             | undefined,
           body: parsed,
         });
-        response.writeHead(200, { "Content-Type": "application/json" });
-        response.end(JSON.stringify({ data: { workflowRuntime: { fireWebhook: { accepted: true } } } }));
+        // What the reactor's webhook endpoint answers an accepted delivery.
+        response.writeHead(202);
+        response.end();
       });
     });
     await new Promise<void>((resolve) =>
@@ -491,13 +492,12 @@ describe.skipIf(!baseUrl)("live paperless-ngx", () => {
       expect(delivery.token).toBe(token);
 
       // use_params + as_json is the only combination that yields a real JSON
-      // object body, and only {{doc_id}} was interpolated.
-      const body = delivery.body as { query: string };
-      expect(typeof body.query).toBe("string");
-      expect(body.query).toContain(
-        `fireWebhook(payload: { docId: ${upload.document_id}, event: "DOCUMENT_ADDED" })`,
-      );
-      expect(body.query).not.toContain("{{");
+      // object body, and only {{doc_id}} was interpolated. Paperless
+      // substitutes into the value, so the id arrives as a string.
+      const body = delivery.body as Record<string, unknown>;
+      expect(String(body.doc_id)).toBe(String(upload.document_id));
+      expect(body.event).toBe("DOCUMENT_ADDED");
+      expect(JSON.stringify(body)).not.toContain("{{");
 
       // The payload the resolver would hand the trigger.
       const items = (await runHook(newDocument, "run", {

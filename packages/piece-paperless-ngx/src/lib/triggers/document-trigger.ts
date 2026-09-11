@@ -49,8 +49,8 @@ interface Registration {
 }
 
 export interface WebhookPayload {
-  docId?: number;
-  doc_id?: number;
+  docId?: number | string;
+  doc_id?: number | string;
   event?: string;
 }
 
@@ -95,13 +95,25 @@ function assertUsableUrl(endpoint: string): void {
   }
 }
 
-// Only {{doc_id}} is interpolated. Jinja renders every placeholder as a raw
-// string, so a document titled `Invoice "Q3"` would break a payload that
-// interpolated the title — an integer cannot. Everything else is hydrated on
-// our side, and the query is written so no two opening braces are ever
-// adjacent except in the placeholder itself.
-export function buildWebhookQuery(event: string): string {
-  return `mutation { workflowRuntime { fireWebhook(payload: { docId: {{doc_id}}, event: "${event}" }) { accepted } } }`;
+// Only {{doc_id}} is interpolated, and only the id: Jinja renders every
+// placeholder as a raw string, so a document titled `Invoice "Q3"` would break
+// a payload that carried the title. Everything else is hydrated on our side.
+//
+// Paperless substitutes into the param's value, so the id arrives as a string
+// even though it is numeric; `run` accepts either.
+export function buildWebhookParams(event: string): Record<string, string> {
+  return { doc_id: "{{doc_id}}", event };
+}
+
+// `docId` from the older GraphQL ingress, `doc_id` from a paperless param,
+// which substitutes placeholders as strings.
+function readDocId(payload: WebhookPayload | undefined): number | undefined {
+  const raw = payload?.docId ?? payload?.doc_id;
+  if (typeof raw === "number") return Number.isFinite(raw) ? raw : undefined;
+  if (typeof raw === "string" && /^\d+$/.test(raw.trim())) {
+    return Number(raw.trim());
+  }
+  return undefined;
 }
 
 function triggerBody(
@@ -149,10 +161,10 @@ function actionBody(
       // object body: with `body` set, as_json JSON-encodes a *string*.
       use_params: true,
       as_json: true,
-      params: { query: buildWebhookQuery(event) },
+      params: buildWebhookParams(event),
       ...(token ? { headers: { "X-Powerhouse-Webhook-Token": token } } : {}),
       // Would populate httpx's `files=`, which wins over `json=` in
-      // encode_request — the query would vanish and paperless would POST a
+      // encode_request — the params would vanish and paperless would POST a
       // bare multipart file instead.
       include_document: false,
     },
@@ -396,12 +408,7 @@ export function createDocumentTrigger(options: DocumentTriggerOptions) {
       const props = context.propsValue as { include_content?: boolean };
       const includeContent = props.include_content === true;
       const payload = context.payload as WebhookPayload | undefined;
-      const docId =
-        typeof payload?.docId === "number"
-          ? payload.docId
-          : typeof payload?.doc_id === "number"
-            ? payload.doc_id
-            : undefined;
+      const docId = readDocId(payload);
 
       if (docId !== undefined) {
         const document = await client.request<Record<string, unknown>>({

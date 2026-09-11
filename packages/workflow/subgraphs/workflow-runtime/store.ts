@@ -63,19 +63,6 @@ export interface TriggerDedupeRow {
   created_at: string;
 }
 
-// One row per enabled webhook trigger. Only the hash is stored: the token
-// itself lives in the provider's configuration (paperless keeps it in the
-// workflow action's headers), and a leaked journal or database dump must not
-// let anyone fire a workflow.
-export interface WebhookEndpointRow {
-  token_hash: string;
-  workflow_id: string;
-  block_type: string;
-  created_at: string;
-  last_delivery_at: string | null;
-  delivery_count: number;
-}
-
 // One key a piece wrote through `ctx.store` during an action. Triggers persist
 // theirs as `trigger_state.store_state`; actions had nowhere to put it.
 
@@ -94,7 +81,6 @@ export interface WorkflowRuntimeDB {
   step_execution: StepExecutionRow;
   trigger_state: TriggerStateRow;
   trigger_dedupe: TriggerDedupeRow;
-  webhook_endpoint: WebhookEndpointRow;
   piece_store: PieceStoreRow;
 }
 
@@ -151,17 +137,6 @@ async function up(db: IRelationalDb<WorkflowRuntimeDB>): Promise<void> {
     .execute();
 
   await db.schema
-    .createTable("webhook_endpoint")
-    .addColumn("token_hash", "text", (col) => col.primaryKey())
-    .addColumn("workflow_id", "text", (col) => col.notNull())
-    .addColumn("block_type", "text", (col) => col.notNull())
-    .addColumn("created_at", "text", (col) => col.notNull())
-    .addColumn("last_delivery_at", "text")
-    .addColumn("delivery_count", "integer", (col) => col.notNull())
-    .ifNotExists()
-    .execute();
-
-  await db.schema
     .createTable("step_execution")
     .addColumn("id", "text", (col) => col.primaryKey())
     .addColumn("run_id", "text", (col) => col.notNull())
@@ -187,6 +162,17 @@ async function up(db: IRelationalDb<WorkflowRuntimeDB>): Promise<void> {
     .addPrimaryKeyConstraint("piece_store_pk", ["scope", "scope_key", "key"])
     .ifNotExists()
     .execute();
+
+  // The reactor's webhook service owns tokens now, in its own namespace, so
+  // the local table is dead weight wherever the GraphQL ingress once ran.
+
+  // Nothing is migrated: those tokens addressed a mutation that no longer
+  // exists, so a trigger re-enables onto a freshly minted endpoint.
+  try {
+    await db.schema.dropTable("webhook_endpoint").ifExists().execute();
+  } catch {
+    // Never blocks the journal: a leftover table costs nothing.
+  }
 }
 
 // Their own ceilings (STORE_KEY_MAX_LENGTH, STORE_VALUE_MAX_SIZE), so a piece
@@ -405,11 +391,13 @@ export class WorkflowRunStore {
       .execute();
   }
 
+  // A null next_poll_at leaves the trigger unscheduled, which is what a
+  // webhook delivery wants: it recorded a success without becoming a poll.
   async recordPollSuccess(
     workflowId: string,
     storeState: string,
     nowIso: string,
-    nextPollAtIso: string,
+    nextPollAtIso: string | null,
   ): Promise<void> {
     await this.db
       .updateTable("trigger_state")
@@ -477,54 +465,6 @@ export class WorkflowRunStore {
       .onConflict((oc) => oc.columns(["workflow_id", "dedupe_key"]).doNothing())
       .execute();
     return true;
-  }
-
-  // Webhook ingress: one endpoint per enabled webhook trigger, addressed by
-  // the hash of its delivery token.
-  async upsertWebhookEndpoint(row: WebhookEndpointRow): Promise<void> {
-    await this.db
-      .insertInto("webhook_endpoint")
-      .values(row)
-      .onConflict((oc) =>
-        oc.column("token_hash").doUpdateSet({
-          workflow_id: row.workflow_id,
-          block_type: row.block_type,
-        }),
-      )
-      .execute();
-  }
-
-  async findWebhookEndpoint(
-    tokenHash: string,
-  ): Promise<WebhookEndpointRow | undefined> {
-    return this.db
-      .selectFrom("webhook_endpoint")
-      .selectAll()
-      .where("token_hash", "=", tokenHash)
-      .executeTakeFirst();
-  }
-
-  async recordWebhookDelivery(
-    tokenHash: string,
-    nowIso: string,
-  ): Promise<void> {
-    const existing = await this.findWebhookEndpoint(tokenHash);
-    if (!existing) return;
-    await this.db
-      .updateTable("webhook_endpoint")
-      .set({
-        last_delivery_at: nowIso,
-        delivery_count: existing.delivery_count + 1,
-      })
-      .where("token_hash", "=", tokenHash)
-      .execute();
-  }
-
-  async deleteWebhookEndpoints(workflowId: string): Promise<void> {
-    await this.db
-      .deleteFrom("webhook_endpoint")
-      .where("workflow_id", "=", workflowId)
-      .execute();
   }
 
   async recordDedupeRun(

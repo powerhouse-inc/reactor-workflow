@@ -115,6 +115,8 @@ export const getResolvers = (
         args: { query: string; limit?: number | null },
       ) => searchBlocks(args.query, args.limit ?? undefined),
       connections: () => workflowRuntime.connections(),
+      webhookEndpoint: (_parent: unknown, args: { workflowId: string }) =>
+        workflowRuntime.webhookEndpoint(args.workflowId),
       secret: async (_parent: unknown, args: { ref: string }) => {
         try {
           return await (await workflowRuntime.secrets()).stat(args.ref);
@@ -194,21 +196,6 @@ export const getResolvers = (
       },
       checkConnection: (_parent: unknown, args: { connectionId: string }) =>
         workflowRuntime.checkConnection(args.connectionId),
-      // The header is preferred over the argument: it keeps the delivery token
-      // out of GraphQL query logs and traces. Providers that cannot set
-      // headers may pass it inline instead.
-      fireWebhook: (
-        _parent: unknown,
-        args: { payload?: unknown; token?: string | null },
-        ctx: { headers?: Record<string, string | string[] | undefined> },
-      ) => {
-        const header = ctx.headers?.["x-powerhouse-webhook-token"];
-        const fromHeader = Array.isArray(header) ? header[0] : header;
-        return workflowRuntime.fireWebhook(
-          args.payload,
-          fromHeader ?? args.token ?? undefined,
-        );
-      },
     },
   };
 };
