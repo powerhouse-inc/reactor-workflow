@@ -66,8 +66,11 @@ const SENSITIVE_SUFFIXES = [
 
 // Deliberately a fixed list: a loose pattern over prose eats more of the
 // message than it saves.
+
+// Signature is the one alternative that carries its own affixes, because a
+// webhook MAC header wraps the word: x-hub-signature-256.
 const TEXT_FIELD = new RegExp(
-  String.raw`\b(authorization|proxy-authorization|api[-_]?key|x-api-key|access[-_]?token|refresh[-_]?token|client[-_]?secret|set-cookie|cookie|password|secret|token)\b(["']?)(\s*[:=]\s*)(["']?)((?:(?:Bearer|Basic|Token)\s+)?[^\s",;&)}]+)\4`,
+  String.raw`\b(authorization|proxy-authorization|api[-_]?key|x-api-key|access[-_]?token|refresh[-_]?token|client[-_]?secret|set-cookie|cookie|password|secret|token|(?:[a-z0-9]+[-_])*signature(?:[-_][a-z0-9]+)*)\b(["']?)(\s*[:=]\s*)(["']?)((?:(?:Bearer|Basic|Token)\s+)?[^\s",;&)}]+)\4`,
   "gi",
 );
 

@@ -51,6 +51,15 @@ describe("redactMessage", () => {
     );
   });
 
+  it("redacts a webhook signature header written as free text", () => {
+    expect(redactMessage("x-hub-signature-256: sha256=deadbeefcafe")).toBe(
+      "x-hub-signature-256: [redacted:x-hub-signature-256]",
+    );
+    expect(redactMessage("Rejected: stripe-signature=t=1,v1=abc")).toContain(
+      "stripe-signature=[redacted:stripe-signature]",
+    );
+  });
+
   it("leaves an error with no credentials intact", () => {
     const message =
       "Request to https://api.example.com/v1/items?page=2 failed with 500: upstream unavailable";

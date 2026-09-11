@@ -11,6 +11,7 @@ import type {
 } from "@powerhousedao/reactor-api";
 
 import {
+  containsRedactedMarker,
   declaredConnectionIds,
   ensurePieceBundle,
   parseBlockType,
@@ -1849,6 +1850,18 @@ export class WorkflowRuntimeService {
     if (run.status !== "FAILED") {
       throw new Error(`Only FAILED runs can be rerun; run is ${run.status}`);
     }
+    const triggerPayload =
+      run.trigger_payload === null
+        ? undefined
+        : (JSON.parse(run.trigger_payload) as unknown);
+    // The journal holds a redacted copy of the payload, so replaying it would
+    // hand a marker to whatever the trigger fed. Refuse before anything runs.
+    if (containsRedactedMarker(triggerPayload)) {
+      throw new Error(
+        `Trigger payload of run "${runId}" was redacted and cannot be ` +
+          "replayed; fire the workflow again instead of rerunning it",
+      );
+    }
     const document = await this.subgraph.reactorClient.get<WorkflowDocument>(
       run.workflow_id,
     );
@@ -1877,10 +1890,6 @@ export class WorkflowRuntimeService {
         port: row.port,
       });
     }
-    const triggerPayload =
-      run.trigger_payload === null
-        ? undefined
-        : (JSON.parse(run.trigger_payload) as unknown);
     return this.fire(run.workflow_id, triggerPayload, "rerun", {
       completedSteps,
       rerunOf: runId,

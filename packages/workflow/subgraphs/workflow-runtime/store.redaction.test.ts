@@ -90,6 +90,39 @@ describe("WorkflowRunStore redaction", () => {
     });
   });
 
+  it("redacts the error a failed onEnable writes onto a trigger row", async () => {
+    await store.upsertTriggerState({
+      workflow_id: "wf-trigger-redact",
+      block_type: "piece#gmail",
+      config_hash: "h1",
+      status: "ERROR",
+      store_state: "{}",
+      interval_ms: 60000,
+      next_poll_at: null,
+      last_poll_at: null,
+      last_error:
+        "onEnable failed: POST https://api.example.com/subscribe?api_key=abcd1234efgh returned 401",
+      consecutive_failures: 1,
+      lease_owner: null,
+      lease_expires_at: null,
+      updated_at: new Date().toISOString(),
+    });
+
+    expect((await store.getTriggerState("wf-trigger-redact"))?.last_error).toBe(
+      "onEnable failed: POST https://api.example.com/subscribe?api_key=[redacted:api_key] returned 401",
+    );
+
+    await store.setTriggerStatus(
+      "wf-trigger-redact",
+      "ERROR",
+      "schedule fire failed: authorization: Bearer leaked-token-value",
+    );
+
+    expect((await store.getTriggerState("wf-trigger-redact"))?.last_error).toBe(
+      "schedule fire failed: authorization: [redacted:authorization]",
+    );
+  });
+
   it("redacts a run failed outside the engine", async () => {
     const runId = await store.startRun({
       workflowId: "wf-redact-2",

@@ -203,6 +203,9 @@ export async function runWorkflow(
       if (isEntryStep(step)) {
         await executeStep(step);
         progressed = true;
+        // Independent roots are otherwise free to run their side effects
+        // before the outer loop notices the run is already over.
+        if (runFailed) break;
         continue;
       }
       if (inbound.length === 0) continue;

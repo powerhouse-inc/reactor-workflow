@@ -184,6 +184,28 @@ describe("replaying a journaled output", () => {
     expect(executor.seen).toHaveLength(0);
   });
 
+  it("stops the rerun before another root step runs its side effects", async () => {
+    const executor = new CredentialedExecutor(
+      new Map([["piece#notify", { sent: true }]]),
+    );
+    const result = await runWorkflow({
+      // Two roots, no trigger: nothing connects them, so the second is free
+      // to run unless a refused replay ends the iteration outright.
+      definition: definition([
+        { id: "s1", key: "fetch", blockType: "piece#fetch", config: {} },
+        { id: "s2", key: "notify", blockType: "piece#notify", config: {} },
+      ]),
+      executor,
+      completedSteps: new Map([
+        ["s1", { output: { access_token: "[redacted:access_token]" } }],
+      ]),
+    });
+
+    expect(result.status).toBe("FAILED");
+    expect(executor.seen).toHaveLength(0);
+    expect(result.steps[1].status).toBe("SKIPPED");
+  });
+
   it("replays an output that carries no marker", async () => {
     const executor = new CredentialedExecutor(
       new Map([["piece#use", { ok: true }]]),

@@ -533,12 +533,18 @@ export class WorkflowRunStore {
       .executeTakeFirst();
   }
 
+  // last_error is whatever a piece's onEnable or a schedule parse threw, so it
+  // goes through the same gate a poll failure does.
   async upsertTriggerState(row: TriggerStateRow): Promise<void> {
+    const values = {
+      ...row,
+      last_error: row.last_error ? redactMessage(row.last_error) : null,
+    };
     await this.db
       .insertInto("trigger_state")
-      .values(row)
+      .values(values)
       .onConflict((oc) => {
-        const { workflow_id: _, ...rest } = row;
+        const { workflow_id: _, ...rest } = values;
         return oc.column("workflow_id").doUpdateSet(rest);
       })
       .execute();
@@ -553,7 +559,7 @@ export class WorkflowRunStore {
       .updateTable("trigger_state")
       .set({
         status,
-        last_error: error ?? null,
+        last_error: error ? redactMessage(error) : null,
         updated_at: new Date().toISOString(),
       })
       .where("workflow_id", "=", workflowId)
