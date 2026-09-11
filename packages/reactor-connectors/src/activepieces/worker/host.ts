@@ -90,6 +90,10 @@ export interface RequestOptions extends RequestTaps {
   timeoutMs?: number;
 }
 
+/** @deprecated Named for the one request that had it; every request takes it
+ * now. Kept because the old name is on main, in this package's public types. */
+export type RunActionOptions = RequestOptions;
+
 type ChildMessage = WorkerResponse | HostCallMessage | HostNotifyMessage;
 
 // A tap reports on the step; it never decides its outcome. Node delivers these
