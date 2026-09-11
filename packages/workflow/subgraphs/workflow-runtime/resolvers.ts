@@ -115,8 +115,16 @@ export const getResolvers = (
         args: { query: string; limit?: number | null },
       ) => searchBlocks(args.query, args.limit ?? undefined),
       connections: () => workflowRuntime.connections(),
-      webhookEndpoint: (_parent: unknown, args: { workflowId: string }) =>
-        workflowRuntime.webhookEndpoint(args.workflowId),
+      webhookEndpoint: (
+        _parent: unknown,
+        args: { workflowId: string; authMethod?: string | null },
+      ) =>
+        workflowRuntime.webhookEndpoint(
+          args.workflowId,
+          args.authMethod === "renown" || args.authMethod === "path"
+            ? args.authMethod
+            : undefined,
+        ),
       secret: async (_parent: unknown, args: { ref: string }) => {
         try {
           return await (await workflowRuntime.secrets()).stat(args.ref);

@@ -72,6 +72,7 @@
   },
   "dependencies": {
     "@powerhousedao/reactor-connectors": "workspace:*",
+    "@powerhousedao/reactor-group": "6.2.3-dev.1",
     "@xyflow/react": "^12.11.3",
     "croner": "10.0.1",
     "react-markdown": "^10.1.0",

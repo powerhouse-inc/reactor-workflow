@@ -17,6 +17,8 @@ import {
 } from "./model.js";
 import { AvailableSoon, PropertyForm } from "./PropertyForm.js";
 import { missingForBlock } from "./validation.js";
+import { WebhookAccessSection } from "./WebhookAccessSection.js";
+import { readWebhookAccess } from "./webhook-access.js";
 
 function stringify(value: unknown): string {
   try {
@@ -735,7 +737,12 @@ type EndpointState =
 // Loaded once in the panel: the URL box shows it and a piece's setup markdown
 // substitutes it, and two fetches would mint against two reads of `armed`.
 function useWebhookEndpoint(
-  load: (() => Promise<WebhookEndpoint | null>) | undefined,
+  load:
+    | ((authMethod?: "path" | "renown") => Promise<WebhookEndpoint | null>)
+    | undefined,
+  // The two methods answer on different URLs, and a draft's choice is not in
+  // the registry yet, so the method is asked for rather than inferred.
+  authMethod: "path" | "renown",
 ): EndpointState {
   const [state, setState] = useState<EndpointState>({ kind: "loading" });
 
@@ -743,7 +750,7 @@ function useWebhookEndpoint(
     if (!load) return;
     let cancelled = false;
     setState({ kind: "loading" });
-    load().then(
+    load(authMethod).then(
       (endpoint) => {
         if (cancelled) return;
         setState(endpoint ? { kind: "ready", endpoint } : { kind: "empty" });
@@ -759,7 +766,7 @@ function useWebhookEndpoint(
     return () => {
       cancelled = true;
     };
-  }, [load]);
+  }, [load, authMethod]);
 
   return state;
 }
@@ -786,7 +793,13 @@ function WebhookUrlSection(props: { state: EndpointState }) {
       {state.kind === "error" ? (
         <p className="text-[11px] text-red-600">{state.message}</p>
       ) : null}
-      {state.kind === "ready" ? (
+      {state.kind === "ready" && state.endpoint.blocker ? (
+        <p className="text-[11px] text-red-600">
+          This reactor is not serving this trigger&rsquo;s endpoint, so there is
+          no URL to hand out. The Access section below says why.
+        </p>
+      ) : null}
+      {state.kind === "ready" && !state.endpoint.blocker ? (
         <>
           <div className="flex gap-1">
             <input
@@ -814,6 +827,12 @@ function WebhookUrlSection(props: { state: EndpointState }) {
               config is invalid.
             </p>
           ) : null}
+          {state.endpoint.authMethod === "renown" ? (
+            <p className="mt-1 rounded bg-slate-50 px-2 py-1 text-[11px] text-slate-600">
+              This is the Renown-authenticated endpoint. The public one this
+              workflow had before no longer answers.
+            </p>
+          ) : null}
           {!state.endpoint.absoluteUrl ? (
             <p className="mt-1 rounded bg-amber-50 px-2 py-1 text-[11px] text-amber-700">
               This reactor does not know its own public address, so the path
@@ -822,8 +841,9 @@ function WebhookUrlSection(props: { state: EndpointState }) {
             </p>
           ) : null}
           <p className="mt-1 text-[11px] text-slate-400">
-            Treat this URL as a secret; anyone holding it can reach the
-            endpoint.
+            {state.endpoint.authMethod === "renown"
+              ? "Callers must also present a Renown bearer token for an allowed identity."
+              : "Treat this URL as a secret; anyone holding it can reach the endpoint."}
           </p>
         </>
       ) : null}
@@ -849,6 +869,7 @@ export function TriggerPanel(props: {
   // this panel on a schedule or document trigger must not create an endpoint.
   const endpoint = useWebhookEndpoint(
     isWebhookTrigger ? props.designTime?.webhookEndpoint : undefined,
+    readWebhookAccess(trigger.config).method,
   );
   const missing = missingForBlock(form, trigger.config, trigger.connectionId);
   const setTrigger = (patch: {
@@ -868,6 +889,14 @@ export function TriggerPanel(props: {
       <PanelHeader title="Trigger" missing={missing} onClose={props.onClose} />
       {isWebhookTrigger && props.designTime?.webhookEndpoint ? (
         <WebhookUrlSection state={endpoint} />
+      ) : null}
+      {trigger.blockType === "core#webhook" ? (
+        <WebhookAccessSection
+          key={`${trigger.id}-access`}
+          config={trigger.config}
+          onChange={(config) => setTrigger({ config })}
+          endpoint={endpoint.kind === "ready" ? endpoint.endpoint : undefined}
+        />
       ) : null}
       {isPieceTrigger ? (
         <ConnectionField
