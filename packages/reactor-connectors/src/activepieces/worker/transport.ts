@@ -28,8 +28,11 @@ export type TransportListener<E extends TransportEvent> = (
 
 // "Faithfully enough" means JSON-shaped, deliberately: the fork's structured
 // clone would carry a Date or a Map, but nothing may depend on that, because
-// no other carrier could honour it. Payloads are flattened before they are
-// sent, so this contract is one a socket could meet too.
+// no other carrier could honour it.
+
+// PieceWorker flattens what it sends and the child flattens what it answers,
+// so this is a contract a socket could meet too — a transport is not required
+// to preserve anything JSON would lose.
 export interface IPieceWorkerTransport {
   send(message: unknown): void;
   on<E extends TransportEvent>(event: E, listener: TransportListener<E>): void;
