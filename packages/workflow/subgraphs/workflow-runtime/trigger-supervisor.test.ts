@@ -318,6 +318,54 @@ describe.skipIf(!rssBundle)("TriggerSupervisor", () => {
     expect(await store.listPieceStore("FLOW", `${sampled}#test`)).toEqual({});
   }, 60_000);
 
+  // A webhook `run` checkpoints its cursor inside the hook just as a poll
+  // does, so a malformed output has to fail rather than read as "no items".
+  it("rejects a non-array webhook run instead of swallowing the delivery", async () => {
+    const scalar = "wf-sup-scalar";
+    const advanced = "g-after-webhook";
+    const worker = {
+      describePiece: () =>
+        Promise.resolve({
+          output: {
+            triggers: [{ name: "new-item", strategy: "WEBHOOK" }],
+          },
+          touched: [],
+          tlsPoisoned: false,
+        }),
+      runTriggerHook: async (request: { hook: string }) => {
+        if (request.hook === "run") {
+          // What pollingHelper does before it returns: the cursor moves first.
+          await store.setPieceStoreValue("FLOW", scalar, CURSOR_KEY, advanced);
+          return { output: "one item", touched: [], tlsPoisoned: false };
+        }
+        return { output: [], touched: [], tlsPoisoned: false };
+      },
+      dispose: () => undefined,
+    };
+    const supervisor3 = new TriggerSupervisor({
+      store: () => Promise.resolve(store),
+      resolveAuth: () => Promise.resolve(undefined),
+      fire: () => undefined,
+      cacheDir,
+      worker: worker as unknown as ConstructorParameters<
+        typeof TriggerSupervisor
+      >[0]["worker"],
+      webhookUrlFor: () => Promise.resolve("https://reactor.test/hook"),
+    });
+    await supervisor3.upsert({ ...binding(), workflowId: scalar });
+    await store.setPieceStoreValue("FLOW", scalar, CURSOR_KEY, "g-before");
+
+    await expect(supervisor3.deliverWebhook(scalar, { id: 1 })).rejects.toThrow(
+      /expected an array/,
+    );
+    // Coercing to no items would have left the advanced cursor standing, and
+    // the event behind it could never be read again.
+    expect(await store.getPieceStoreValue("FLOW", scalar, CURSOR_KEY)).toBe(
+      "g-before",
+    );
+    supervisor3.stop();
+  }, 60_000);
+
   it("claims dedupe keys once within the TTL", async () => {
     const now = new Date().toISOString();
     expect(await store.claimDedupe(WF, "k1", 30_000, now)).toBe(true);

@@ -22,12 +22,23 @@ export const PROJECT_SCOPE_KEY = "reactor";
 
 // The supervisor drops these partitions when the sample returns; a key prefix
 // could do neither, since prefixes alias and nothing enumerates them.
-export const TEST_PARTITION_SUFFIX = "#test";
+const TEST_PARTITION_SUFFIX = "#test";
+
+// A sample partitions by workflow in *both* scopes, unlike a live run: two
+// samples on one project partition would read and then delete each other's.
+export function testPartitionKey(
+  scope: StoreScopeName,
+  workflowId: string,
+): string {
+  const base =
+    scope === "PROJECT" ? `${PROJECT_SCOPE_KEY}#${workflowId}` : workflowId;
+  return base + TEST_PARTITION_SUFFIX;
+}
 
 export function createPieceStorePort(
   store: WorkflowRunStore,
   workflowIdFor: () => string | undefined,
-  partitionSuffix = "",
+  sample = false,
 ): PieceStorePort {
   // A step with no workflow in scope must fail rather than read or write
   // another workflow's keys.
@@ -40,7 +51,11 @@ export function createPieceStorePort(
   };
 
   const partition = (scope: StoreScopeName): string =>
-    (scope === "PROJECT" ? PROJECT_SCOPE_KEY : flowKey()) + partitionSuffix;
+    sample
+      ? testPartitionKey(scope, flowKey())
+      : scope === "PROJECT"
+        ? PROJECT_SCOPE_KEY
+        : flowKey();
 
   // Async so that a missing run scope rejects rather than throwing out of a
   // method whose contract is a promise.

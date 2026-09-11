@@ -113,7 +113,7 @@ function isDuplicateObject(error: unknown): boolean {
   return (error as { code?: unknown }).code === "42P07";
 }
 
-async function up(db: IRelationalDb<WorkflowRuntimeDB>): Promise<void> {
+async function up(db: IRelationalDb<WorkflowRuntimeDB>): Promise<Set<string>> {
   await db.schema
     .createTable("run")
     .addColumn("id", "text", (col) => col.primaryKey())
@@ -223,7 +223,7 @@ async function up(db: IRelationalDb<WorkflowRuntimeDB>): Promise<void> {
     // Never blocks the journal: a leftover table costs nothing.
   }
 
-  await migrateTriggerStoreState(db);
+  return migrateTriggerStoreState(db);
 }
 
 // MIGRATION: trigger store state used to round-trip through
@@ -234,40 +234,74 @@ async function up(db: IRelationalDb<WorkflowRuntimeDB>): Promise<void> {
 
 // ONE-WAY DOOR: the blob is blanked once moved and never written again, so a
 // reactor rolled back past this point reads an empty cursor and re-delivers.
+interface LegacyStoreStateRow {
+  workflow_id: string;
+  store_state: string;
+}
+
+interface LegacyEntry {
+  scope: "FLOW" | "PROJECT";
+  scopeKey: string;
+  key: string;
+  value: unknown;
+}
+
+interface PendingMigration {
+  workflowId: string;
+  entries: LegacyEntry[];
+}
+
+// Returns the workflows whose blob did not move: nothing reads store_state any
+// more, so their hooks would run against an empty piece_store.
 async function migrateTriggerStoreState(
   db: IRelationalDb<WorkflowRuntimeDB>,
-): Promise<void> {
-  let rows: { workflow_id: string; store_state: string }[];
+): Promise<Set<string>> {
+  const unmigrated = new Set<string>();
+  let rows: LegacyStoreStateRow[];
   try {
+    // Oldest first, so a later row's project key overwrites an earlier one;
+    // workflow_id settles a tie rather than leaving it to row order.
     rows = await db
       .selectFrom("trigger_state")
       .select(["workflow_id", "store_state"])
+      .orderBy("updated_at", "asc")
+      .orderBy("workflow_id", "asc")
       .execute();
   } catch (error) {
     // Never blocks the journal: a store that fails to open is returned as
     // `undefined` forever, which silently stops every trigger in the process.
     logger.error("Could not read trigger_state to migrate it", error);
-    return;
+    return unmigrated;
   }
+  const pending: PendingMigration[] = [];
   for (const row of rows) {
+    const entries = parseLegacyBlob(row, unmigrated);
+    if (entries) pending.push({ workflowId: row.workflow_id, entries });
+  }
+  const projectWinner = resolveProjectCollisions(pending);
+  for (const row of pending) {
     try {
-      await migrateOneRow(db, row);
+      await migrateOneRow(db, row, projectWinner);
     } catch (error) {
       // Per row, for the same reason. The blob is only blanked on success, so
       // a row that failed here is retried on the next startup.
+      unmigrated.add(row.workflowId);
       logger.error(
-        `Could not migrate trigger store state for ${row.workflow_id}`,
+        `Could not migrate trigger store state for ${row.workflowId}`,
         error,
       );
     }
   }
+  return unmigrated;
 }
 
-async function migrateOneRow(
-  db: IRelationalDb<WorkflowRuntimeDB>,
-  row: { workflow_id: string; store_state: string },
-): Promise<void> {
-  if (!row.store_state || row.store_state === "{}") return;
+// A blob that cannot be read is left exactly as it is, and its workflow is
+// reported unmigrated: guessing at it would lose the state for good.
+function parseLegacyBlob(
+  row: LegacyStoreStateRow,
+  unmigrated: Set<string>,
+): LegacyEntry[] | null {
+  if (!row.store_state || row.store_state === "{}") return null;
   let state: unknown;
   try {
     state = JSON.parse(row.store_state);
@@ -275,30 +309,100 @@ async function migrateOneRow(
     logger.warn(
       `Leaving unparseable store_state for ${row.workflow_id} in place`,
     );
-    return;
+    unmigrated.add(row.workflow_id);
+    return null;
   }
-  if (typeof state !== "object" || state === null) return;
+  if (typeof state !== "object" || state === null) {
+    unmigrated.add(row.workflow_id);
+    return null;
+  }
+  const entries: LegacyEntry[] = [];
   for (const [key, value] of Object.entries(state)) {
     // Only the unambiguous shape a test hook wrote is dropped. A bare "test…"
     // key may be a piece's own ("testimonials"), so it migrates instead.
     if (/^testflow_.+\//.test(key)) continue;
     const flow = /^flow_(.+?)\/(.+)$/.exec(key);
-    const [scope, scopeKey, name] = flow
-      ? (["FLOW", flow[1], flow[2]] as const)
-      : (["PROJECT", PROJECT_SCOPE_KEY, key] as const);
-    if (!flow && key.startsWith("test")) {
+    if (flow) {
+      entries.push({
+        scope: "FLOW",
+        scopeKey: flow[1],
+        key: flow[2],
+        value,
+      });
+      continue;
+    }
+    if (key.startsWith("test")) {
       logger.info(
         `Migrating "${key}" for ${row.workflow_id} as a project key; it may be a test leftover`,
       );
     }
-    await insertPieceStoreIfAbsent(db, scope, scopeKey, name, value);
+    entries.push({
+      scope: "PROJECT",
+      scopeKey: PROJECT_SCOPE_KEY,
+      key,
+      value,
+    });
+  }
+  return entries;
+}
+
+// A bare project key lived inside each workflow's own row, so two workflows
+// can hold different values for one key and only one can survive the move.
+
+// Last write wins, over the whole set rather than whichever row the database
+// returned first, and every discarded value is named so an operator sees it.
+function resolveProjectCollisions(
+  pending: PendingMigration[],
+): Map<string, string> {
+  const winner = new Map<string, string>();
+  const contested = new Map<string, string[]>();
+  for (const row of pending) {
+    for (const entry of row.entries) {
+      if (entry.scope !== "PROJECT") continue;
+      const previous = winner.get(entry.key);
+      if (previous !== undefined) {
+        const seen = contested.get(entry.key) ?? [previous];
+        contested.set(entry.key, [...seen, row.workflowId]);
+      }
+      winner.set(entry.key, row.workflowId);
+    }
+  }
+  for (const [key, workflows] of contested) {
+    logger.warn(
+      `Project store key "${key}" was written by ${workflows.join(", ")}; keeping the value last updated, from ${winner.get(key)}, and discarding the rest`,
+    );
+  }
+  return winner;
+}
+
+async function migrateOneRow(
+  db: IRelationalDb<WorkflowRuntimeDB>,
+  row: PendingMigration,
+  projectWinner: Map<string, string>,
+): Promise<void> {
+  for (const entry of row.entries) {
+    // Another workflow updated its row later, so its copy of this project key
+    // is the surviving one.
+    if (
+      entry.scope === "PROJECT" &&
+      projectWinner.get(entry.key) !== row.workflowId
+    ) {
+      continue;
+    }
+    await insertPieceStoreIfAbsent(
+      db,
+      entry.scope,
+      entry.scopeKey,
+      entry.key,
+      entry.value,
+    );
   }
   // Blanked once moved, so a later startup cannot replay a stale blob over
   // what the trigger has written since.
   await db
     .updateTable("trigger_state")
     .set({ store_state: "{}" })
-    .where("workflow_id", "=", row.workflow_id)
+    .where("workflow_id", "=", row.workflowId)
     .execute();
 }
 
@@ -443,7 +547,10 @@ export interface StartRunOptions {
 const runsInFlight = new Set<string>();
 
 export class WorkflowRunStore {
-  private constructor(private readonly db: IRelationalDb<WorkflowRuntimeDB>) {}
+  private constructor(
+    private readonly db: IRelationalDb<WorkflowRuntimeDB>,
+    private readonly unmigrated: Set<string>,
+  ) {}
 
   static async create(
     relationalDb: NamespaceFactory,
@@ -451,10 +558,22 @@ export class WorkflowRunStore {
     const db = (await relationalDb.createNamespace(
       "workflow_runtime",
     )) as IRelationalDb<WorkflowRuntimeDB>;
-    await up(db);
-    const store = new WorkflowRunStore(db);
+    const unmigrated = await up(db);
+    const store = new WorkflowRunStore(db, unmigrated);
     await store.recoverOrphanedRuns();
     return store;
+  }
+
+  // Its legacy store_state never reached piece_store, so the hook would run
+  // against an empty one, unable to name the endpoint onDisable has to free.
+  hasUnmigratedTriggerState(workflowId: string): boolean {
+    return this.unmigrated.has(workflowId);
+  }
+
+  // The trigger no longer depends on the blob — it was re-enabled from
+  // scratch — so it may be scheduled again without waiting for a restart.
+  clearUnmigratedTriggerState(workflowId: string): void {
+    this.unmigrated.delete(workflowId);
   }
 
   // A run still RUNNING when the journal opens, and not one of ours, belongs
@@ -707,12 +826,15 @@ export class WorkflowRunStore {
   }
 
   async listDueTriggerStates(nowIso: string): Promise<TriggerStateRow[]> {
-    return this.db
+    const rows = await this.db
       .selectFrom("trigger_state")
       .selectAll()
       .where("status", "=", "ENABLED")
       .where("next_poll_at", "<=", nowIso)
       .execute();
+    // A row whose state is still trapped in the blob is not runnable: polling
+    // it would advance an empty cursor and re-deliver everything it ever saw.
+    return rows.filter((row) => !this.unmigrated.has(row.workflow_id));
   }
 
   async listTriggerStates(): Promise<TriggerStateRow[]> {

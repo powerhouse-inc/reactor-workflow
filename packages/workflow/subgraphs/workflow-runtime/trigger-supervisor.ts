@@ -31,8 +31,7 @@ import {
 } from "./schedule.js";
 import {
   createPieceStorePort,
-  PROJECT_SCOPE_KEY,
-  TEST_PARTITION_SUFFIX,
+  testPartitionKey,
 } from "./piece-store-port.js";
 import type { TriggerStateRow, WorkflowRunStore } from "./store.js";
 
@@ -294,10 +293,10 @@ export class TriggerSupervisor {
   ): Promise<void> {
     if (!store) return;
     try {
-      await store.deletePieceStore("FLOW", workflowId + TEST_PARTITION_SUFFIX);
+      await store.deletePieceStore("FLOW", testPartitionKey("FLOW", workflowId));
       await store.deletePieceStore(
         "PROJECT",
-        PROJECT_SCOPE_KEY + TEST_PARTITION_SUFFIX,
+        testPartitionKey("PROJECT", workflowId),
       );
     } catch (error) {
       logger.warn(`Could not clear test store for ${workflowId}`, error);
@@ -337,6 +336,13 @@ export class TriggerSupervisor {
       const rewind = await this.cursorRewind(store, workflowId);
       try {
         const result = await this.hook(binding, "run", { payload });
+        // Checked before the checkpoint, as a poll does: coercing a scalar to
+        // no items leaves nothing to rewind, and the delivery is lost for good.
+        if (!Array.isArray(result.output)) {
+          throw new Error(
+            `Trigger run returned ${typeof result.output}, expected an array`,
+          );
+        }
         // A delivery to a trigger that never enabled still fires, but it must
         // not clear the enable error or reset the backoff by recording a
         // success.
@@ -348,8 +354,7 @@ export class TriggerSupervisor {
             new Date(now.getTime() + row.interval_ms).toISOString(),
           );
         }
-        const items = Array.isArray(result.output) ? result.output : [];
-        for (const item of items) {
+        for (const item of result.output) {
           await this.fireItem(store, binding, item, now);
         }
       } catch (error) {
@@ -403,7 +408,7 @@ export class TriggerSupervisor {
       ? createPieceStorePort(
           store,
           () => binding.workflowId,
-          hook === "test" ? TEST_PARTITION_SUFFIX : "",
+          hook === "test",
         )
       : undefined;
     const bundle = await ensurePieceBundle({
@@ -490,8 +495,13 @@ export class TriggerSupervisor {
     const now = this.now();
     // Only a completed enable is a republish: a retry after a failed one must
     // register again, or a piece that skips registration never delivers.
+
+    // A republish also keeps the cursor and the _webhook_id the hook wrote
+    // before, which is exactly what a blob that never migrated no longer holds.
     const isRepublish =
-      existing?.config_hash === hash && existing.status === "ENABLED";
+      existing?.config_hash === hash &&
+      existing.status === "ENABLED" &&
+      !store.hasUnmigratedTriggerState(binding.workflowId);
     if (existing && !isRepublish && existing.status === "ENABLED") {
       // The trigger changed: release the old registration first.
       await this.disableRow(binding.workflowId, existing, superseded);
@@ -559,6 +569,7 @@ export class TriggerSupervisor {
       });
       this.enabledOk.add(binding.workflowId);
       this.enableRetries.delete(binding.workflowId);
+      store.clearUnmigratedTriggerState(binding.workflowId);
       logger.info(
         `Enabled ${binding.blockType} for workflow ${binding.workflowId} (every ${intervalMs}ms)`,
       );

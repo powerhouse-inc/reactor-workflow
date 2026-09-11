@@ -134,4 +134,50 @@ describe("trigger store_state migration", () => {
     );
     expect(await migrated.listPieceStore("FLOW", broken)).toEqual({});
   });
+
+  // The blob is the only copy of that state and nothing reads the column any
+  // more, so polling the row would run the hook against an empty store.
+  it("keeps a row whose blob never migrated out of the due list", async () => {
+    const stuck = "wf-legacy-stuck";
+    await store.upsertTriggerState({
+      ...legacyRow("{ not json"),
+      workflow_id: stuck,
+      next_poll_at: "2000-01-01T00:00:00.000Z",
+    });
+    const migrated = await remigrate();
+
+    expect(migrated.hasUnmigratedTriggerState(stuck)).toBe(true);
+    const due = await migrated.listDueTriggerStates(new Date().toISOString());
+    expect(due.map((row) => row.workflow_id)).not.toContain(stuck);
+
+    // A re-enable rebuilds the state from scratch, which is what releases it.
+    migrated.clearUnmigratedTriggerState(stuck);
+    const after = await migrated.listDueTriggerStates(new Date().toISOString());
+    expect(after.map((row) => row.workflow_id)).toContain(stuck);
+  });
+
+  // A bare project key lived in each workflow's own row, so the same key can
+  // hold two values and only the last one written survives the move.
+  it("keeps the project value from the most recently updated row", async () => {
+    const key = "contested_account";
+    await store.upsertTriggerState({
+      ...legacyRow(JSON.stringify({ [key]: "older" })),
+      workflow_id: "wf-legacy-old",
+      updated_at: "2026-01-01T00:00:00.000Z",
+    });
+    await store.upsertTriggerState({
+      ...legacyRow(JSON.stringify({ [key]: "newer" })),
+      workflow_id: "wf-legacy-new",
+      updated_at: "2026-06-01T00:00:00.000Z",
+    });
+    const migrated = await remigrate();
+
+    // Whichever row the database happened to return first used to win.
+    expect(await migrated.getPieceStoreValue("PROJECT", "reactor", key)).toBe(
+      "newer",
+    );
+    expect((await migrated.getTriggerState("wf-legacy-old"))?.store_state).toBe(
+      "{}",
+    );
+  });
 });

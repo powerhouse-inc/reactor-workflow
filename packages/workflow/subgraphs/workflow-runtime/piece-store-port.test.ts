@@ -3,7 +3,7 @@
 import { getDbClient } from "@powerhousedao/reactor-api";
 import { createRelationalDb } from "@powerhousedao/shared/processors";
 import { beforeAll, describe, expect, it } from "vitest";
-import { createPieceStorePort } from "./piece-store-port.js";
+import { createPieceStorePort, testPartitionKey } from "./piece-store-port.js";
 import { WorkflowRunStore } from "./store.js";
 
 describe("piece store partitions", () => {
@@ -50,6 +50,26 @@ describe("piece store partitions", () => {
 
     expect(await portFor("wf-c").get("temp", "FLOW")).toBeNull();
     expect(await portFor("wf-c").get("temp", "PROJECT")).toBe("y");
+  });
+
+  it("keeps two samples' PROJECT keys apart", async () => {
+    const samplePort = (workflowId: string) =>
+      createPieceStorePort(store, () => workflowId, true);
+    await samplePort("wf-s1").put("draft", "one", "PROJECT");
+    await samplePort("wf-s2").put("draft", "two", "PROJECT");
+
+    // A live PROJECT key is the reactor's, but two samples on one partition
+    // would read each other's keys and delete them on the way out.
+    expect(await samplePort("wf-s1").get("draft", "PROJECT")).toBe("one");
+    expect(await samplePort("wf-s2").get("draft", "PROJECT")).toBe("two");
+
+    // And the partition the supervisor drops afterwards is that same one.
+    await store.deletePieceStore(
+      "PROJECT",
+      testPartitionKey("PROJECT", "wf-s1"),
+    );
+    expect(await samplePort("wf-s1").get("draft", "PROJECT")).toBeNull();
+    expect(await samplePort("wf-s2").get("draft", "PROJECT")).toBe("two");
   });
 
   it("refuses a FLOW key when no workflow is in scope", async () => {
