@@ -15,11 +15,19 @@ import type { WorkflowRunStore } from "./store.js";
 
 // When a real tenancy model arrives this constant becomes its default project
 // id, and the migration is one UPDATE. See issue #16.
-const PROJECT_SCOPE_KEY = "reactor";
+export const PROJECT_SCOPE_KEY = "reactor";
+
+// Appended to both partition keys for a design-time sample, so a test run
+// cannot alias a live key however the piece happens to name it.
+
+// The supervisor drops these partitions when the sample returns; a key prefix
+// could do neither, since prefixes alias and nothing enumerates them.
+export const TEST_PARTITION_SUFFIX = "#test";
 
 export function createPieceStorePort(
   store: WorkflowRunStore,
   workflowIdFor: () => string | undefined,
+  partitionSuffix = "",
 ): PieceStorePort {
   // A step with no workflow in scope must fail rather than read or write
   // another workflow's keys.
@@ -32,7 +40,7 @@ export function createPieceStorePort(
   };
 
   const partition = (scope: StoreScopeName): string =>
-    scope === "PROJECT" ? PROJECT_SCOPE_KEY : flowKey();
+    (scope === "PROJECT" ? PROJECT_SCOPE_KEY : flowKey()) + partitionSuffix;
 
   // Async so that a missing run scope rejects rather than throwing out of a
   // method whose contract is a promise.

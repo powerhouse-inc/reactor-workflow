@@ -15,6 +15,7 @@ import {
 } from "@powerhousedao/reactor-connectors";
 import { childLogger } from "document-model";
 import { randomUUID } from "node:crypto";
+import { PROJECT_SCOPE_KEY } from "./piece-store-port.js";
 
 export interface RunRow {
   id: string;
@@ -52,6 +53,8 @@ export interface TriggerStateRow {
   block_type: string;
   config_hash: string;
   status: string; // ENABLED | DISABLED | ERROR
+  // Vestigial: hook state lives in piece_store now, and this is written "{}"
+  // and never read. Rolling back past the migration re-delivers; see up().
   store_state: string;
   interval_ms: number;
   next_poll_at: string | null;
@@ -71,11 +74,11 @@ export interface TriggerDedupeRow {
   created_at: string;
 }
 
-// One key a piece wrote through `ctx.store` during an action. Triggers persist
-// theirs as `trigger_state.store_state`; actions had nowhere to put it.
+// One key a piece wrote through `ctx.store`, from an action or a trigger hook
+// alike — the same table for both, as Activepieces has.
 
-// `scope` mirrors their StoreScope. PROJECT is meant to span a project's
-// workflows, which we have no identity for, so it is stored per workflow too.
+// `scope` mirrors their StoreScope: FLOW partitions by workflow, PROJECT by
+// the reactor, which is the only project identity we have. See issue #16.
 export interface PieceStoreRow {
   scope: string; // FLOW | PROJECT
   scope_key: string;
@@ -218,6 +221,143 @@ async function up(db: IRelationalDb<WorkflowRuntimeDB>): Promise<void> {
     await db.schema.dropTable("webhook_endpoint").ifExists().execute();
   } catch {
     // Never blocks the journal: a leftover table costs nothing.
+  }
+
+  await migrateTriggerStoreState(db);
+}
+
+// MIGRATION: trigger store state used to round-trip through
+// trigger_state.store_state as one JSON blob; it lives in piece_store now.
+
+// Stranding it would strand a WEBHOOK trigger's registered endpoint id, and
+// then onDisable can never delete that endpoint: it leaks at the provider.
+
+// ONE-WAY DOOR: the blob is blanked once moved and never written again, so a
+// reactor rolled back past this point reads an empty cursor and re-delivers.
+async function migrateTriggerStoreState(
+  db: IRelationalDb<WorkflowRuntimeDB>,
+): Promise<void> {
+  let rows: { workflow_id: string; store_state: string }[];
+  try {
+    rows = await db
+      .selectFrom("trigger_state")
+      .select(["workflow_id", "store_state"])
+      .execute();
+  } catch (error) {
+    // Never blocks the journal: a store that fails to open is returned as
+    // `undefined` forever, which silently stops every trigger in the process.
+    logger.error("Could not read trigger_state to migrate it", error);
+    return;
+  }
+  for (const row of rows) {
+    try {
+      await migrateOneRow(db, row);
+    } catch (error) {
+      // Per row, for the same reason. The blob is only blanked on success, so
+      // a row that failed here is retried on the next startup.
+      logger.error(
+        `Could not migrate trigger store state for ${row.workflow_id}`,
+        error,
+      );
+    }
+  }
+}
+
+async function migrateOneRow(
+  db: IRelationalDb<WorkflowRuntimeDB>,
+  row: { workflow_id: string; store_state: string },
+): Promise<void> {
+  if (!row.store_state || row.store_state === "{}") return;
+  let state: unknown;
+  try {
+    state = JSON.parse(row.store_state);
+  } catch {
+    logger.warn(
+      `Leaving unparseable store_state for ${row.workflow_id} in place`,
+    );
+    return;
+  }
+  if (typeof state !== "object" || state === null) return;
+  for (const [key, value] of Object.entries(state)) {
+    // Only the unambiguous shape a test hook wrote is dropped. A bare "test…"
+    // key may be a piece's own ("testimonials"), so it migrates instead.
+    if (/^testflow_.+\//.test(key)) continue;
+    const flow = /^flow_(.+?)\/(.+)$/.exec(key);
+    const [scope, scopeKey, name] = flow
+      ? (["FLOW", flow[1], flow[2]] as const)
+      : (["PROJECT", PROJECT_SCOPE_KEY, key] as const);
+    if (!flow && key.startsWith("test")) {
+      logger.info(
+        `Migrating "${key}" for ${row.workflow_id} as a project key; it may be a test leftover`,
+      );
+    }
+    await insertPieceStoreIfAbsent(db, scope, scopeKey, name, value);
+  }
+  // Blanked once moved, so a later startup cannot replay a stale blob over
+  // what the trigger has written since.
+  await db
+    .updateTable("trigger_state")
+    .set({ store_state: "{}" })
+    .where("workflow_id", "=", row.workflow_id)
+    .execute();
+}
+
+// A key the piece has already rewritten under the new layout wins: the blob is
+// the older copy by construction.
+async function insertPieceStoreIfAbsent(
+  db: IRelationalDb<WorkflowRuntimeDB>,
+  scope: string,
+  scopeKey: string,
+  key: string,
+  value: unknown,
+): Promise<void> {
+  const encoded = jsonOrNull(value);
+  if (encoded === null) return;
+  // The blob had no ceilings; piece_store inherits the action ones. A value
+  // over them still migrates, but every later put on it will throw.
+  warnIfOverPieceStoreLimits(scope, scopeKey, key, encoded);
+  const existing = await db
+    .selectFrom("piece_store")
+    .select("key")
+    .where("scope", "=", scope)
+    .where("scope_key", "=", scopeKey)
+    .where("key", "=", key)
+    .executeTakeFirst();
+  if (existing) return;
+  // doNothing, not a bare insert: two reactors starting against one journal
+  // both see no row, and a PK violation here would reject up() and the store.
+  await db
+    .insertInto("piece_store")
+    .values({
+      scope,
+      scope_key: scopeKey,
+      key,
+      value: encoded,
+      updated_at: new Date().toISOString(),
+    })
+    .onConflict((oc) => oc.columns(["scope", "scope_key", "key"]).doNothing())
+    .execute();
+}
+
+// Loud rather than fatal: a trigger whose accumulated state is already over
+// the ceiling would otherwise start failing on its next put with no clue why.
+function warnIfOverPieceStoreLimits(
+  scope: string,
+  scopeKey: string,
+  key: string,
+  encoded: string,
+): void {
+  const at = `${scope}/${scopeKey}/${key}`;
+  if (key.length > PIECE_STORE_MAX_KEY_LENGTH) {
+    logger.warn(
+      `Migrated store key ${at} is ${key.length} chars, over the ${PIECE_STORE_MAX_KEY_LENGTH} limit; writes to it will fail`,
+    );
+  }
+  const size = Buffer.byteLength(encoded, "utf8");
+  if (size > PIECE_STORE_MAX_VALUE_BYTES) {
+    logger.warn(
+      `Migrated store value ${at} is ${size} bytes, over the ${PIECE_STORE_MAX_VALUE_BYTES} limit; writes to it will fail`,
+    );
   }
 }
 

@@ -84,7 +84,9 @@ export interface RequestTaps {
   notifications?: HostNotifyHandlers;
 }
 
-export interface RunActionOptions extends RequestTaps {
+// Every request that can serve a piece takes the same shape: a deadline plus
+// the taps the host offers while it runs.
+export interface RequestOptions extends RequestTaps {
   timeoutMs?: number;
 }
 
@@ -137,7 +139,7 @@ export class PieceWorker {
   // Runs are serialized per worker; a pool composes multiple workers later.
   runAction(
     request: RunActionRequest,
-    options: RunActionOptions = {},
+    options: RequestOptions = {},
   ): Promise<PieceWorkerResult> {
     return this.enqueue("run", request, options.timeoutMs, options);
   }
@@ -167,12 +169,13 @@ export class PieceWorker {
     return this.enqueue("describe", request, options.timeoutMs);
   }
 
-  // One trigger lifecycle hook; the caller owns storeState persistence.
+  // One trigger lifecycle hook. It takes the same taps a run does, so a
+  // `durableStore` hook reaches the host's store while it is still running.
   runTriggerHook(
     request: TriggerHookRequest,
-    options: { timeoutMs?: number } = {},
+    options: RequestOptions = {},
   ): Promise<PieceWorkerResult> {
-    return this.enqueue("trigger-hook", request, options.timeoutMs);
+    return this.enqueue("trigger-hook", request, options.timeoutMs, options);
   }
 
   private enqueue(
