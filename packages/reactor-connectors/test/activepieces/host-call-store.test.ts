@@ -47,8 +47,18 @@ const app = {
       displayName: "Scoped",
       props: {},
       run: async (ctx) => {
-        await ctx.store.put("shared", "project-wide", "PROJECT");
-        return { key: await ctx.store.get("shared", "PROJECT") };
+        // What StoreScope.PROJECT actually carries at runtime.
+        await ctx.store.put("shared", "project-wide", "COLLECTION");
+        return { key: await ctx.store.get("shared", "COLLECTION") };
+      },
+    },
+    flowScoped: {
+      name: "flowScoped",
+      displayName: "Flow Scoped",
+      props: {},
+      run: async (ctx) => {
+        await ctx.store.put("cursor", 1, "FLOW");
+        return { implicit: await ctx.store.get("cursor") };
       },
     },
     refused: {
@@ -201,9 +211,26 @@ describe("ctx.store over the host call channel", () => {
 
     await executor.execute(execution("@test/cursor@1.0.0#scoped", {}));
 
-    // Their Store takes the scope per call and folds it into the key, so the
-    // host sees one namespace and stores exactly what the piece asked for.
+    // StoreScope.PROJECT is the string "COLLECTION"; folding that name in
+    // verbatim would split one scope across two partitions.
     expect([...store.entries.keys()]).toEqual(["PROJECT:shared"]);
+  });
+
+  it("treats an explicit FLOW scope as the partition's default", async () => {
+    const store = memoryStore();
+    const executor = new ActivepiecesBlockExecutor({
+      cacheDir,
+      worker,
+      pieceStore: store,
+    });
+
+    const result = await executor.execute(
+      execution("@test/cursor@1.0.0#flowScoped", {}),
+    );
+
+    // A piece that names FLOW and one that omits the scope mean the same key.
+    expect(result.output).toEqual({ implicit: 1 });
+    expect([...store.entries.keys()]).toEqual(["cursor"]);
   });
 
   it("surfaces a host refusal to the piece as a thrown error", async () => {
