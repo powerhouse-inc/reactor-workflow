@@ -8,6 +8,7 @@ import {
   ORPHANED_RUN_ERROR,
   WorkflowRunStore,
   type StepExecutionRow,
+  type WorkflowRuntimeDB,
 } from "./store.js";
 
 // The pre-journaling shape: step_execution without the unique constraint.
@@ -235,20 +236,47 @@ describe("WorkflowRunStore per-step journaling", () => {
   });
 
   it("sweeps a crash-orphaned run to FAILED, making it rerunnable", async () => {
-    const runId = await start();
-    await store.recordStep(runId, 0, {
-      stepId: "a",
-      key: "first",
-      blockType: "fake#ok",
-      status: "SUCCEEDED",
-      output: { v: "survived" },
-      port: "next",
-    });
-    // The reactor dies here: no finishRun, no failRun, run still RUNNING.
-    expect((await store.getRun(runId))?.status).toBe("RUNNING");
-
     const { db } = getDbClient();
-    const reopened = await WorkflowRunStore.create(createRelationalDb(db));
+    const relationalDb = createRelationalDb(db);
+    // Written straight to the journal, since a run this process started is one
+    // it may still be executing: the crash has to predate us.
+    const journal: IRelationalDb<WorkflowRuntimeDB> =
+      await relationalDb.createNamespace("workflow_runtime");
+    const runId = "run-from-a-dead-reactor";
+    await journal
+      .insertInto("run")
+      .values({
+        id: runId,
+        workflow_id: "wf-journal",
+        workflow_name: "Journal me",
+        workflow_version: 1,
+        trigger_kind: "piece",
+        trigger_payload: null,
+        status: "RUNNING",
+        error: null,
+        started_at: new Date().toISOString(),
+        ended_at: null,
+        rerun_of: null,
+      })
+      .execute();
+    await journal
+      .insertInto("step_execution")
+      .values({
+        id: "step-from-a-dead-reactor",
+        run_id: runId,
+        ordinal: 0,
+        step_id: "a",
+        step_key: "first",
+        block_type: "fake#ok",
+        status: "SUCCEEDED",
+        input: null,
+        output: JSON.stringify({ v: "survived" }),
+        port: "next",
+        error: null,
+      })
+      .execute();
+
+    const reopened = await WorkflowRunStore.create(relationalDb);
 
     const run = await reopened.getRun(runId);
     expect(run?.status).toBe("FAILED");
@@ -275,15 +303,23 @@ describe("WorkflowRunStore per-step journaling", () => {
     // b's journal write failed, so ordinal 1 is left free.
     await store.recordStep(runId, 0, step("a", "SUCCEEDED"));
     await store.recordStep(runId, 2, step("c", "SUCCEEDED"));
-    await store.finishRun(runId, {
-      status: "SUCCEEDED",
-      steps: [
-        step("a", "SUCCEEDED"),
-        step("b", "SUCCEEDED"),
-        step("c", "SUCCEEDED"),
-        step("d", "SKIPPED"),
-      ],
-    });
+    await store.finishRun(
+      runId,
+      {
+        status: "SUCCEEDED",
+        steps: [
+          step("a", "SUCCEEDED"),
+          step("b", "SUCCEEDED"),
+          step("c", "SUCCEEDED"),
+          step("d", "SKIPPED"),
+        ],
+      },
+      new Map([
+        ["a", 0],
+        ["b", 1],
+        ["c", 2],
+      ]),
+    );
 
     const steps = await store.getSteps(runId);
     // b fills the hole rather than being appended after c; the skip trails.
@@ -329,5 +365,83 @@ describe("WorkflowRunStore per-step journaling", () => {
     // The journaled step keeps its execution ordinal; the sweep lands after.
     expect(steps.map((row) => row.ordinal)).toEqual([0, 1]);
     expect((await store.getRun(runId))?.status).toBe("SUCCEEDED");
+  });
+
+  it("leaves a run this process is still executing out of the sweep", async () => {
+    const runId = await start();
+    // A hot reload: configure() opens a second store over the same journal
+    // while the run above is still going.
+    const { db } = getDbClient();
+    const reopened = await WorkflowRunStore.create(createRelationalDb(db));
+
+    // Failing it here would hand rerun() a live run to duplicate.
+    expect((await reopened.getRun(runId))?.status).toBe("RUNNING");
+    await store.finishRun(runId, { status: "SUCCEEDED", steps: [] });
+    expect((await store.getRun(runId))?.status).toBe("SUCCEEDED");
+  });
+
+  it("repairs lost rows in execution order, not definition order", async () => {
+    const runId = await start();
+    const step = (id: string) => ({
+      stepId: id,
+      key: id,
+      blockType: "fake#ok",
+      status: "SUCCEEDED" as const,
+      port: "next",
+    });
+    // The graph ran a, c, b, d; b's and c's journal writes both failed.
+    await store.recordStep(runId, 0, step("a"));
+    await store.recordStep(runId, 3, step("d"));
+    await store.finishRun(
+      runId,
+      // As runWorkflow returns them: definition order, which is not this run's.
+      {
+        status: "SUCCEEDED",
+        steps: [step("a"), step("b"), step("c"), step("d")],
+      },
+      new Map([
+        ["a", 0],
+        ["c", 1],
+        ["b", 2],
+        ["d", 3],
+      ]),
+    );
+
+    const steps = await store.getSteps(runId);
+    expect(steps.map((row) => row.step_id)).toEqual(["a", "c", "b", "d"]);
+    expect(steps.map((row) => row.ordinal)).toEqual([0, 1, 2, 3]);
+  });
+
+  it("closes the run out even when the closing step write fails", async () => {
+    const { db } = getDbClient();
+    const relationalDb = createRelationalDb(db);
+    const journal: IRelationalDb<WorkflowRuntimeDB> =
+      await relationalDb.createNamespace("workflow_runtime_broken");
+    const broken = await WorkflowRunStore.create({
+      createNamespace: () => Promise.resolve(journal),
+    });
+    const runId = await broken.startRun({
+      workflowId: "wf-broken",
+      workflowName: "Broken journal",
+      workflowVersion: 1,
+      triggerKind: "piece",
+    });
+    // The journal dies mid-run; the run's own work already succeeded.
+    await journal.schema.dropTable("step_execution").execute();
+
+    await broken.finishRun(runId, {
+      status: "SUCCEEDED",
+      steps: [
+        {
+          stepId: "a",
+          key: "first",
+          blockType: "fake#ok",
+          status: "SUCCEEDED",
+          port: "next",
+        },
+      ],
+    });
+
+    expect((await broken.getRun(runId))?.status).toBe("SUCCEEDED");
   });
 });

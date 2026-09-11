@@ -287,6 +287,13 @@ export interface StartRunOptions {
   rerunOf?: string;
 }
 
+// Runs this process started and has not closed out. A run outlives its store:
+// configure() opens a new one on each hot reload, mid-flight runs and all.
+
+// Process-local on purpose. A second reactor over the same journal would need
+// a lease, and one that can block startup costs more than a precise sweep.
+const runsInFlight = new Set<string>();
+
 export class WorkflowRunStore {
   private constructor(private readonly db: IRelationalDb<WorkflowRuntimeDB>) {}
 
@@ -302,21 +309,26 @@ export class WorkflowRunStore {
     return store;
   }
 
-  // A run still RUNNING when the journal opens belongs to a process that is
-  // gone: nothing else can be writing it, so close it out as FAILED.
+  // A run still RUNNING when the journal opens, and not one of ours, belongs
+  // to a process that is gone: close it out as FAILED.
 
   // Without this the steps journaled before the crash are unreachable, since
   // rerun() only accepts a FAILED run.
   async recoverOrphanedRuns(): Promise<number> {
-    const result = await this.db
+    let query = this.db
       .updateTable("run")
       .set({
         status: "FAILED",
         error: ORPHANED_RUN_ERROR,
         ended_at: new Date().toISOString(),
       })
-      .where("status", "=", "RUNNING")
-      .executeTakeFirst();
+      .where("status", "=", "RUNNING");
+    // Failing a run this process is still executing would hand rerun() a live
+    // run, and its side effects would happen twice.
+    if (runsInFlight.size > 0) {
+      query = query.where("id", "not in", [...runsInFlight]);
+    }
+    const result = await query.executeTakeFirst();
     const recovered = Number(result.numUpdatedRows);
     if (recovered > 0) {
       logger.warn(
@@ -344,6 +356,7 @@ export class WorkflowRunStore {
         rerun_of: options.rerunOf ?? null,
       })
       .execute();
+    runsInFlight.add(id);
     return id;
   }
 
@@ -365,60 +378,27 @@ export class WorkflowRunStore {
       .execute();
   }
 
-  // Closes the run out: upserting the whole step set fills in the SKIPPED
-  // sweep journaling omits, and repairs what a failed journal write left.
-  async finishRun(runId: string, result: WorkflowRunResult): Promise<void> {
+  // Closes the run out. `executionOrder` maps step id to the ordinal the step
+  // ran with, which a lost row cannot otherwise be given back.
+  async finishRun(
+    runId: string,
+    result: WorkflowRunResult,
+    executionOrder?: ReadonlyMap<string, number>,
+  ): Promise<void> {
+    // Terminal from here whatever the writes below do: if we leave the run
+    // RUNNING, a later sweep should be free to reach it.
+    runsInFlight.delete(runId);
     if (result.steps.length > 0) {
-      const journaled = await this.db
-        .selectFrom("step_execution")
-        .select(["step_id", "ordinal"])
-        .where("run_id", "=", runId)
-        .execute();
-      // Executed steps keep the execution-order ordinal they journaled with;
-      // the sweep is appended after them, in definition order.
-      const existing = new Map(
-        journaled.map((row) => [row.step_id, row.ordinal]),
-      );
-      const taken = new Set(existing.values());
-      let nextOrdinal = journaled.reduce(
-        (max, row) => Math.max(max, row.ordinal + 1),
-        0,
-      );
-      // A hole below the high-water mark is a step that ran but whose journal
-      // write failed. It ran before the steps above it, so it belongs in it.
-      const holes: number[] = [];
-      for (let i = 0; i < nextOrdinal; i++) {
-        if (!taken.has(i)) holes.push(i);
+      try {
+        await this.sweepSteps(runId, result, executionOrder);
+      } catch (error) {
+        // The work is done and the caller is owed its result: a journal that
+        // cannot record the steps must not also cost the run its status.
+        logger.warn(
+          `Run ${runId}: writing the closing step journal failed; the run is closed out without it`,
+          error,
+        );
       }
-      const ordinalFor = (step: StepExecutionRecord) => {
-        const journaledOrdinal = existing.get(step.stepId);
-        if (journaledOrdinal !== undefined) return journaledOrdinal;
-        // Only an executed step can own a hole: a skip never journaled one,
-        // so skips are appended after everything that actually ran.
-        if (step.status !== "SKIPPED" && holes.length > 0) return holes.shift()!;
-        return nextOrdinal++;
-      };
-      await this.db
-        .insertInto("step_execution")
-        .values(
-          result.steps.map((step) => ({
-            id: randomUUID(),
-            ...stepValues(runId, ordinalFor(step), step),
-          })),
-        )
-        .onConflict((oc) =>
-          oc.columns(["run_id", "step_id"]).doUpdateSet((eb) => ({
-            ordinal: eb.ref("excluded.ordinal"),
-            step_key: eb.ref("excluded.step_key"),
-            block_type: eb.ref("excluded.block_type"),
-            status: eb.ref("excluded.status"),
-            input: eb.ref("excluded.input"),
-            output: eb.ref("excluded.output"),
-            port: eb.ref("excluded.port"),
-            error: eb.ref("excluded.error"),
-          })),
-        )
-        .execute();
     }
     await this.db
       .updateTable("run")
@@ -431,7 +411,62 @@ export class WorkflowRunStore {
       .execute();
   }
 
+  // Upserts the whole step set: fills in the SKIPPED sweep per-step journaling
+  // omits, and repairs the rows a failed journal write left behind.
+  private async sweepSteps(
+    runId: string,
+    result: WorkflowRunResult,
+    executionOrder?: ReadonlyMap<string, number>,
+  ): Promise<void> {
+    const journaled = await this.db
+      .selectFrom("step_execution")
+      .select(["step_id", "ordinal"])
+      .where("run_id", "=", runId)
+      .execute();
+    // A journaled step keeps the ordinal it ran with; the sweep lands after
+    // the highest of them.
+    const ordinals = new Map(journaled.map((row) => [row.step_id, row.ordinal]));
+    let nextOrdinal = journaled.reduce(
+      (max, row) => Math.max(max, row.ordinal + 1),
+      0,
+    );
+    for (const step of result.steps) {
+      const ran = executionOrder?.get(step.stepId);
+      // A step that ran but lost its write goes back where it ran, not where
+      // the definition happens to list it.
+      if (ran === undefined || ordinals.has(step.stepId)) continue;
+      ordinals.set(step.stepId, ran);
+      nextOrdinal = Math.max(nextOrdinal, ran + 1);
+    }
+    // Skips never ran and never journaled an ordinal, so they trail everything
+    // that did, in definition order.
+    const ordinalFor = (step: StepExecutionRecord) =>
+      ordinals.get(step.stepId) ?? nextOrdinal++;
+    await this.db
+      .insertInto("step_execution")
+      .values(
+        result.steps.map((step) => ({
+          id: randomUUID(),
+          ...stepValues(runId, ordinalFor(step), step),
+        })),
+      )
+      .onConflict((oc) =>
+        oc.columns(["run_id", "step_id"]).doUpdateSet((eb) => ({
+          ordinal: eb.ref("excluded.ordinal"),
+          step_key: eb.ref("excluded.step_key"),
+          block_type: eb.ref("excluded.block_type"),
+          status: eb.ref("excluded.status"),
+          input: eb.ref("excluded.input"),
+          output: eb.ref("excluded.output"),
+          port: eb.ref("excluded.port"),
+          error: eb.ref("excluded.error"),
+        })),
+      )
+      .execute();
+  }
+
   async failRun(runId: string, error: string): Promise<void> {
+    runsInFlight.delete(runId);
     await this.db
       .updateTable("run")
       .set({ status: "FAILED", error, ended_at: new Date().toISOString() })
