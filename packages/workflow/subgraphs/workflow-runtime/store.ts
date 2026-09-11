@@ -7,7 +7,11 @@ import type { IRelationalDb } from "@powerhousedao/reactor-browser";
 export interface NamespaceFactory {
   createNamespace(namespace: string): Promise<unknown>;
 }
-import type { WorkflowRunResult } from "@powerhousedao/reactor-connectors";
+import type {
+  StepExecutionRecord,
+  WorkflowRunResult,
+} from "@powerhousedao/reactor-connectors";
+import { childLogger } from "document-model";
 import { randomUUID } from "node:crypto";
 
 export interface RunRow {
@@ -28,6 +32,8 @@ export interface RunRow {
 export interface StepExecutionRow {
   id: string;
   run_id: string;
+  // Execution order; runs journaled before per-step journaling landed hold
+  // the definition index. Both are per-run, and nothing compares across runs.
   ordinal: number;
   step_id: string;
   step_key: string;
@@ -82,6 +88,24 @@ export interface WorkflowRuntimeDB {
   trigger_state: TriggerStateRow;
   trigger_dedupe: TriggerDedupeRow;
   piece_store: PieceStoreRow;
+}
+
+const logger = childLogger(["workflow", "runtime", "store"]);
+
+// Recorded as the run's error when the reactor died mid-run, so the cause is
+// legible in the UI rather than the run just stopping.
+export const ORPHANED_RUN_ERROR =
+  "Reactor stopped before the run finished; steps completed before then were journaled";
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+// Postgres 42P07: the constraint's backing index is already there, which is
+// what a re-run migration looks like. Bad data raises 23505 instead.
+function isDuplicateObject(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  return (error as { code?: unknown }).code === "42P07";
 }
 
 async function up(db: IRelationalDb<WorkflowRuntimeDB>): Promise<void> {
@@ -149,8 +173,28 @@ async function up(db: IRelationalDb<WorkflowRuntimeDB>): Promise<void> {
     .addColumn("output", "text")
     .addColumn("port", "text")
     .addColumn("error", "text")
+    .addUniqueConstraint("step_execution_run_step", ["run_id", "step_id"])
     .ifNotExists()
     .execute();
+
+  // Additive migration for journals created before per-step journaling: the
+  // upsert in recordStep/finishRun needs this constraint to conflict on.
+  try {
+    await db.schema
+      .alterTable("step_execution")
+      .addUniqueConstraint("step_execution_run_step", ["run_id", "step_id"])
+      .execute();
+  } catch (error) {
+    // Only "already there" is benign. Swallowing anything else would leave
+    // every later upsert failing on a missing ON CONFLICT target.
+    if (!isDuplicateObject(error)) {
+      throw new Error(
+        `Could not add the step_execution (run_id, step_id) unique constraint, ` +
+          `which per-step journaling upserts against: ${errorMessage(error)}`,
+        { cause: error },
+      );
+    }
+  }
 
   await db.schema
     .createTable("piece_store")
@@ -206,6 +250,23 @@ function assertPieceStoreEntry(key: string, value: unknown): void {
   }
 }
 
+// Every column of a step_execution row but its surrogate id, shared by the
+// per-step write and the closing sweep so the two cannot drift.
+function stepValues(runId: string, ordinal: number, step: StepExecutionRecord) {
+  return {
+    run_id: runId,
+    ordinal,
+    step_id: step.stepId,
+    step_key: step.key,
+    block_type: step.blockType,
+    status: step.status,
+    input: jsonOrNull(step.input),
+    output: jsonOrNull(step.output),
+    port: step.port ?? null,
+    error: step.error ?? null,
+  };
+}
+
 function jsonOrNull(value: unknown): string | null {
   if (value === undefined) return null;
   try {
@@ -236,7 +297,33 @@ export class WorkflowRunStore {
       "workflow_runtime",
     )) as IRelationalDb<WorkflowRuntimeDB>;
     await up(db);
-    return new WorkflowRunStore(db);
+    const store = new WorkflowRunStore(db);
+    await store.recoverOrphanedRuns();
+    return store;
+  }
+
+  // A run still RUNNING when the journal opens belongs to a process that is
+  // gone: nothing else can be writing it, so close it out as FAILED.
+
+  // Without this the steps journaled before the crash are unreachable, since
+  // rerun() only accepts a FAILED run.
+  async recoverOrphanedRuns(): Promise<number> {
+    const result = await this.db
+      .updateTable("run")
+      .set({
+        status: "FAILED",
+        error: ORPHANED_RUN_ERROR,
+        ended_at: new Date().toISOString(),
+      })
+      .where("status", "=", "RUNNING")
+      .executeTakeFirst();
+    const recovered = Number(result.numUpdatedRows);
+    if (recovered > 0) {
+      logger.warn(
+        `Recovered ${recovered} workflow run(s) left RUNNING by a stopped reactor; they are now FAILED and rerunnable`,
+      );
+    }
+    return recovered;
   }
 
   async startRun(options: StartRunOptions): Promise<string> {
@@ -260,23 +347,75 @@ export class WorkflowRunStore {
     return id;
   }
 
+  // One step's terminal state, written the moment it reaches it, so a
+  // reactor killed mid-run leaves the work it finished behind.
+
+  // Keyed by (run_id, step_id): a re-executed step corrects its row.
+  async recordStep(
+    runId: string,
+    ordinal: number,
+    step: StepExecutionRecord,
+  ): Promise<void> {
+    const values = stepValues(runId, ordinal, step);
+    const { run_id: _run, step_id: _step, ...mutable } = values;
+    await this.db
+      .insertInto("step_execution")
+      .values({ id: randomUUID(), ...values })
+      .onConflict((oc) => oc.columns(["run_id", "step_id"]).doUpdateSet(mutable))
+      .execute();
+  }
+
+  // Closes the run out: upserting the whole step set fills in the SKIPPED
+  // sweep journaling omits, and repairs what a failed journal write left.
   async finishRun(runId: string, result: WorkflowRunResult): Promise<void> {
     if (result.steps.length > 0) {
+      const journaled = await this.db
+        .selectFrom("step_execution")
+        .select(["step_id", "ordinal"])
+        .where("run_id", "=", runId)
+        .execute();
+      // Executed steps keep the execution-order ordinal they journaled with;
+      // the sweep is appended after them, in definition order.
+      const existing = new Map(
+        journaled.map((row) => [row.step_id, row.ordinal]),
+      );
+      const taken = new Set(existing.values());
+      let nextOrdinal = journaled.reduce(
+        (max, row) => Math.max(max, row.ordinal + 1),
+        0,
+      );
+      // A hole below the high-water mark is a step that ran but whose journal
+      // write failed. It ran before the steps above it, so it belongs in it.
+      const holes: number[] = [];
+      for (let i = 0; i < nextOrdinal; i++) {
+        if (!taken.has(i)) holes.push(i);
+      }
+      const ordinalFor = (step: StepExecutionRecord) => {
+        const journaledOrdinal = existing.get(step.stepId);
+        if (journaledOrdinal !== undefined) return journaledOrdinal;
+        // Only an executed step can own a hole: a skip never journaled one,
+        // so skips are appended after everything that actually ran.
+        if (step.status !== "SKIPPED" && holes.length > 0) return holes.shift()!;
+        return nextOrdinal++;
+      };
       await this.db
         .insertInto("step_execution")
         .values(
-          result.steps.map((step, ordinal) => ({
+          result.steps.map((step) => ({
             id: randomUUID(),
-            run_id: runId,
-            ordinal,
-            step_id: step.stepId,
-            step_key: step.key,
-            block_type: step.blockType,
-            status: step.status,
-            input: jsonOrNull(step.input),
-            output: jsonOrNull(step.output),
-            port: step.port ?? null,
-            error: step.error ?? null,
+            ...stepValues(runId, ordinalFor(step), step),
+          })),
+        )
+        .onConflict((oc) =>
+          oc.columns(["run_id", "step_id"]).doUpdateSet((eb) => ({
+            ordinal: eb.ref("excluded.ordinal"),
+            step_key: eb.ref("excluded.step_key"),
+            block_type: eb.ref("excluded.block_type"),
+            status: eb.ref("excluded.status"),
+            input: eb.ref("excluded.input"),
+            output: eb.ref("excluded.output"),
+            port: eb.ref("excluded.port"),
+            error: eb.ref("excluded.error"),
           })),
         )
         .execute();
