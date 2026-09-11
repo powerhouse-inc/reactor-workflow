@@ -1329,7 +1329,7 @@ export class WorkflowRuntimeService {
     if (!this.subgraph) {
       throw new Error("Workflow runtime is not configured yet");
     }
-    await this.assertCanReadConnection(connectionId, ctx);
+    await this.assertCanReadDocument(connectionId, ctx);
     const document =
       await this.subgraph.reactorClient.get<ConnectionDocument>(connectionId);
     if (document.header.documentType !== "powerhouse/connection") {
@@ -1340,6 +1340,11 @@ export class WorkflowRuntimeService {
     const state = document.state.global;
     const accountLabel = state.accountLabel ?? null;
 
+    // Revocation is a decision, not an observation: recording any result here
+    // would write ERROR over it and let the next check resolve the secrets.
+    if (state.status === "REVOKED") {
+      return { ok: false, detail: "Connection is revoked", accountLabel };
+    }
     if (state.status === "UNCONFIGURED") {
       return this.recordCheckResult(document, {
         ok: false,
@@ -1515,8 +1520,8 @@ export class WorkflowRuntimeService {
     return documents.filter((_, index) => allowed[index]);
   }
 
-  private async assertCanReadConnection(
-    connectionId: string,
+  private async assertCanReadDocument(
+    documentId: string,
     ctx: Context | undefined,
   ): Promise<void> {
     if (!this.subgraph) {
@@ -1525,7 +1530,7 @@ export class WorkflowRuntimeService {
     if (!ctx) {
       throw new Error("Connection access requires an authenticated request");
     }
-    await this.subgraph.assertCanRead(connectionId, ctx);
+    await this.subgraph.assertCanRead(documentId, ctx);
   }
 
   // Design-time DROPDOWN options() / DYNAMIC props(), run in the piece worker.
@@ -1552,7 +1557,7 @@ export class WorkflowRuntimeService {
     // about the request authorizes it, so the caller's own read access does.
     let auth: unknown;
     if (connectionId && this.subgraph) {
-      await this.assertCanReadConnection(connectionId, ctx);
+      await this.assertCanReadDocument(connectionId, ctx);
       auth = await new DocumentConnectionResolver(
         this.subgraph,
         this.secretProvider(),
@@ -1702,14 +1707,21 @@ export class WorkflowRuntimeService {
   }
 
   // Runs the trigger's test hook; the test store prefix keeps cursors intact.
-  async testTrigger(workflowId: string): Promise<unknown> {
+
+  // It resolves the trigger's connection and hands the credentials to piece
+  // code, so the caller must be able to read both documents.
+  async testTrigger(workflowId: string, ctx?: Context): Promise<unknown> {
     if (!this.subgraph) {
       throw new Error("Workflow runtime is not configured yet");
     }
+    await this.assertCanReadDocument(workflowId, ctx);
     const document =
       await this.subgraph.reactorClient.get<WorkflowDocument>(workflowId);
     const trigger = document.state.global.trigger;
     if (!trigger) throw new Error("Workflow has no trigger");
+    if (trigger.connectionId) {
+      await this.assertCanReadDocument(trigger.connectionId, ctx);
+    }
     const binding = this.pieceBinding(workflowId, trigger);
     if (!binding) {
       throw new Error(`"${trigger.blockType}" is not a piece trigger`);

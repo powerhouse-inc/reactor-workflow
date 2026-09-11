@@ -75,6 +75,35 @@ describe("design-time connection access", () => {
     ).rejects.not.toThrow(/forbidden|authenticated request/);
   });
 
+  it("refuses testTrigger for a workflow the caller cannot read", async () => {
+    await expect(
+      workflowRuntime.testTrigger("wf-theirs", CTX),
+    ).rejects.toThrow("forbidden");
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it("refuses testTrigger when the request carries no caller", async () => {
+    await expect(workflowRuntime.testTrigger("wf-theirs")).rejects.toThrow(
+      "authenticated request",
+    );
+  });
+
+  it("refuses testTrigger when only the trigger's connection is off limits", async () => {
+    get.mockResolvedValueOnce({
+      header: { id: "conn-mine", documentType: "powerhouse/workflow" },
+      state: {
+        global: {
+          trigger: { id: "t", blockType: BLOCK, connectionId: "conn-theirs" },
+        },
+      },
+    } as never);
+
+    // The workflow is readable; the credentials it would resolve are not.
+    await expect(
+      workflowRuntime.testTrigger("conn-mine", CTX),
+    ).rejects.toThrow("forbidden");
+  });
+
   it("lists only the connections the caller may read", async () => {
     const listed = await workflowRuntime.connections(CTX);
 

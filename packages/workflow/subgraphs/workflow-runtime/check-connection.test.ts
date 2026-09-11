@@ -472,6 +472,36 @@ describe("WorkflowRuntimeService.checkConnection", () => {
 
     expect(result.ok).toBe(false);
     expect(result.detail).toContain("revoked");
+    // Recording any result would write ERROR over REVOKED, which is what the
+    // second check below would then walk through.
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("keeps refusing a revoked connection on a second check", async () => {
+    let document = reducer(
+      makeDocument(),
+      actions.recordCheckResult({ status: "REVOKED", checkedAt: FIXED_NOW }),
+    );
+    // Writes land on the document the next read returns, so a recorded ERROR
+    // would clear REVOKED exactly as it does against a real reactor.
+    get.mockImplementation(() => Promise.resolve(document));
+    execute.mockImplementation((_id, _scope, actionList: Action[]) => {
+      document = reducer(document, actionList[0]);
+      return document;
+    });
+    vi.mocked(ensurePieceBundle).mockClear();
+
+    await workflowRuntime.checkConnection(document.header.id, TEST_CTX);
+    const second = await workflowRuntime.checkConnection(
+      document.header.id,
+      TEST_CTX,
+    );
+
+    expect(second.ok).toBe(false);
+    expect(second.detail).toContain("revoked");
+    expect(document.state.global.status).toBe("REVOKED");
+    // Nothing reached the piece, so nothing shaped the stored secrets.
+    expect(ensurePieceBundle).not.toHaveBeenCalled();
   });
 
   it("refuses a caller the subgraph cannot identify", async () => {

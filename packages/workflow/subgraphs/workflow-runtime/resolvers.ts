@@ -171,8 +171,11 @@ export const getResolvers = (
     WorkflowRuntimeMutations: {
       fire: (_parent: unknown, args: FireArgs) =>
         workflowRuntime.fire(args.workflowId, args.payload),
-      testTrigger: (_parent: unknown, args: { workflowId: string }) =>
-        workflowRuntime.testTrigger(args.workflowId),
+      testTrigger: (
+        _parent: unknown,
+        args: { workflowId: string },
+        ctx: Context,
+      ) => workflowRuntime.testTrigger(args.workflowId, ctx),
       rerun: (_parent: unknown, args: { runId: string }) =>
         workflowRuntime.rerun(args.runId),
       createSecret: async (
