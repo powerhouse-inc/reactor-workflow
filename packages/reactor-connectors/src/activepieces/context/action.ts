@@ -9,6 +9,9 @@ export { UnsupportedContextMemberError } from "./stubs.js";
 
 // The scope travels beside the key rather than inside it: which partition a
 // key belongs to is the host's decision, not a naming convention.
+
+// Values are JSON-shaped by contract: a durable store round-trips them through
+// JSON, so nothing may rely on a Date or a Map surviving a put.
 export interface KeyValueStore {
   put(key: string, value: unknown, scope?: StoreScopeName): Promise<unknown>;
   get(key: string, scope?: StoreScopeName): Promise<unknown>;
