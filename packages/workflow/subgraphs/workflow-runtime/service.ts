@@ -17,6 +17,7 @@ import {
   PieceWorker,
   PieceWorkerError,
   PieceWorkerTimeoutError,
+  rememberSecrets,
   runWorkflow,
   type BlockExecutor,
   type CheckConnectionOutcome,
@@ -907,10 +908,13 @@ export class WorkflowRuntimeService {
       store: () => this.store(),
       resolveAuth: async (connectionId, request) => {
         if (!connectionId || !this.subgraph) return undefined;
-        return new DocumentConnectionResolver(
+        const resolved = await new DocumentConnectionResolver(
           this.subgraph,
           this.secretProvider(),
-        ).resolve(connectionId, request);
+        ).resolveWithSecrets(connectionId, request);
+        // The supervisor reads these back off the auth value to redact what a
+        // trigger hook throws; nothing else travels with it.
+        return rememberSecrets(resolved.auth, resolved.secretValues);
       },
       fire: (workflowId, payload, kind) => {
         this.fireFromTrigger(workflowId, payload, kind);
