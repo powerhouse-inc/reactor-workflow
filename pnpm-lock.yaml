@@ -103,6 +103,9 @@ importers:
       '@powerhousedao/reactor-connectors':
         specifier: workspace:*
         version: link:../reactor-connectors
+      '@powerhousedao/reactor-group':
+        specifier: 6.2.3-dev.1
+        version: 6.2.3-dev.1(41acaafa64944558c8b7b2294189121c)
       '@xyflow/react':
         specifier: ^12.11.3
         version: 12.11.6(@types/react-dom@19.2.5(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)

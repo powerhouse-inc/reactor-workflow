@@ -268,6 +268,15 @@ describe("WorkflowRuntimeService webhooks", () => {
       expect(await policy()).toBeUndefined();
     });
 
+    it("is absent once the trigger asks for Renown identity", async () => {
+      // The Renown face is served from the package's own scope. Leaving the
+      // public one armed would keep open the very path the author closed.
+      await arm({});
+      expect(await policy()).toBeDefined();
+      await arm({ auth: "renown", allowedAddresses: [] });
+      expect(await policy()).toBeUndefined();
+    });
+
     it("declares no verification for an unsigned endpoint", async () => {
       await arm({});
       expect(await policy()).toMatchObject({ verify: undefined });

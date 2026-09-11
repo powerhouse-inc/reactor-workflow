@@ -7,7 +7,21 @@ import type {
   WebhookPolicy,
   WebhookReply,
   WebhookRequest,
+  WebhookVerification,
 } from "@powerhousedao/reactor-api";
+import {
+  GROUP_DOCUMENT_TYPE,
+  GroupMembers,
+  groupRecordFrom,
+  type GroupRecord,
+} from "./group-members.js";
+import { RenownWebhookRoute, type RenownAccess } from "./renown-webhook.js";
+
+/** Why a Renown endpoint cannot take a delivery. Named, not prose, so the
+ * editor can say something specific about each. */
+export type WebhookEndpointBlocker =
+  | "RENOWN_ROUTE_UNAVAILABLE"
+  | "NO_IDENTITY_RESOLUTION";
 
 import {
   ensurePieceBundle,
@@ -85,6 +99,7 @@ import {
   parseWebhookConfig,
   WEBHOOK_BLOCK,
   WEBHOOK_TRIGGER_KIND,
+  type WebhookAuthMethod,
   type WebhookConfig,
   type WebhookPayload,
 } from "./webhook.js";
@@ -673,6 +688,11 @@ export class WorkflowRuntimeService {
           operation.resultingState,
         );
       }
+      // A group edit takes effect on the next delivery, with no workflow
+      // re-saved: the processor already sees every document's operations.
+      if (context.documentType === GROUP_DOCUMENT_TYPE) {
+        this.groups.invalidate(context.documentId);
+      }
       if (operation.error !== undefined) continue;
       for (const registration of this.registry.values()) {
         if (registration.kind !== "document-event") continue;
@@ -995,6 +1015,77 @@ export class WorkflowRuntimeService {
     await this.webhookRegistration;
   }
 
+  // The Renown-authenticated face of the same endpoints, on this package's own
+  // HTTP scope. See renown-webhook.ts for why it cannot live on the reactor's.
+  private readonly renownRoute = new RenownWebhookRoute({
+    endpoints: () => this.endpoints(),
+    accessFor: (workflowId) => this.webhookAccess(workflowId),
+    deliver: (request) => this.deliverWebhook(request),
+  });
+
+  /** Registers the Renown face (from onSetup; idempotent). Separate from the
+   * webhook registration because the scope, not the webhook service, hosts it. */
+  registerRenownWebhookRoute(subgraph: BaseSubgraph): void {
+    if (this.renownRoute.registered) return;
+    try {
+      this.renownRoute.register(subgraph.http);
+    } catch (error) {
+      // A host with no route scope loses Renown webhooks, not every workflow:
+      // the manager awaits onSetup, so throwing would take the subgraph down.
+
+      // Nothing is latched, so a later call retries; the editor reads the
+      // failure as a blocker rather than being handed a URL that 404s.
+      logger.warn(
+        "Renown-authenticated webhooks are unavailable on this host; other triggers are unaffected",
+        error,
+      );
+    }
+  }
+
+  // Group references resolve per delivery rather than when the workflow was
+  // saved, so changing a group's members never means re-saving a workflow.
+  private readonly groups = new GroupMembers((ids) => this.loadGroups(ids));
+
+  /** Reads the named group documents. `find` filters by type and id, so this
+   * never scans, and a group that does not come back grants nobody. */
+  private async loadGroups(ids: readonly string[]): Promise<GroupRecord[]> {
+    if (!this.subgraph) return [];
+    const page = await this.subgraph.reactorClient.find({
+      type: GROUP_DOCUMENT_TYPE,
+      ids: [...ids],
+    });
+    return page.results
+      .map((document) => groupRecordFrom(document))
+      .filter((record): record is GroupRecord => record !== undefined);
+  }
+
+  /** What the Renown route is allowed to decide with: undefined whenever the
+   * workflow is not armed as a core#webhook trigger, which reads as unknown. */
+  private async webhookAccess(workflowId: string): Promise<RenownAccess> {
+    await this.seedPromise;
+    const registration = this.registry.get(workflowId);
+    if (registration?.kind !== WEBHOOK_TRIGGER_KIND) return undefined;
+    const { auth, allowedAddresses, allowedGroups, methods } =
+      registration.config;
+    const resolved = await this.groups.resolve(allowedGroups);
+    if (resolved.missing.length > 0) {
+      // Not fatal: the addresses and the groups that did resolve still grant.
+      // A deleted or unreadable group simply grants nobody, and says so.
+      logger.warn(
+        "Webhook trigger for @workflow names @count group(s) that did not resolve: @groups",
+        workflowId,
+        resolved.missing.length,
+        resolved.missing.join(", "),
+      );
+    }
+    return {
+      auth,
+      methods,
+      allowedAddresses: [...allowedAddresses, ...resolved.members],
+      verify: await this.webhookVerification(registration.config, workflowId),
+    };
+  }
+
   /** The endpoint family, once registered. Seeding runs before `onSetup`, so a caller
    * that needs a token has to wait for it rather than find it missing. */
   private async endpoints(): Promise<IWebhookEndpoints | undefined> {
@@ -1026,6 +1117,12 @@ export class WorkflowRuntimeService {
     if (registration.kind !== WEBHOOK_TRIGGER_KIND) return undefined;
 
     const { config } = registration;
+    // Renown-mode triggers are served from this package's own scope instead.
+    // Leaving the public face armed would keep the unauthenticated path open,
+
+    // which is the whole thing the author just turned off; and answering as an
+    // unknown token does is what a prober should see either way.
+    if (config.auth === "renown") return undefined;
     return {
       methods: config.methods,
       challengeField: config.challengeField,
@@ -1035,28 +1132,57 @@ export class WorkflowRuntimeService {
             ttlSeconds: config.dedupeTtlSeconds,
           }
         : undefined,
-      verify:
-        config.scheme === "none"
-          ? undefined
-          : {
-              scheme: config.scheme,
-              header: config.header,
-              secret: await this.webhookSecret(config, workflowId),
-              toleranceSeconds: config.toleranceSeconds,
-              algorithm: config.algorithm,
-              encoding: config.encoding,
-              prefix: config.prefix,
-            },
+      verify: await this.webhookVerification(config, workflowId),
     };
+  }
+
+  /** The author's signature scheme, secret resolved. Shared by both faces so
+   * choosing Renown never quietly drops the verification they configured. */
+  private async webhookVerification(
+    config: WebhookConfig,
+    workflowId: string,
+  ): Promise<WebhookVerification | undefined> {
+    if (config.scheme === "none") return undefined;
+    return {
+      scheme: config.scheme,
+      header: config.header,
+      secret: await this.webhookSecret(config, workflowId),
+      toleranceSeconds: config.toleranceSeconds,
+      algorithm: config.algorithm,
+      encoding: config.encoding,
+      prefix: config.prefix,
+    };
+  }
+
+  // Why a Renown endpoint cannot take deliveries, if it cannot. Null is the
+  // answer an author wants; anything else is a fault they can act on.
+  private renownBlocker(
+    renownUrl: string | undefined,
+  ): WebhookEndpointBlocker | null {
+    if (!renownUrl || !this.renownRoute.registered) {
+      return "RENOWN_ROUTE_UNAVAILABLE";
+    }
+    // Observed, not queried: nothing on the subgraph surface reports the
+    // host's own auth, so this is only known once a delivery has revealed it.
+    return this.renownRoute.identityResolution === "off"
+      ? "NO_IDENTITY_RESOLUTION"
+      : null;
   }
 
   // Design-time: the URL to hand the provider. Minted on demand so an author
   // can copy it before the first delivery.
-  async webhookEndpoint(workflowId: string): Promise<{
+  async webhookEndpoint(
+    workflowId: string,
+    // The method the author has chosen, which on a draft is not yet in the
+    // registry: without it a draft is told the public URL it is leaving.
+    requestedAuthMethod?: WebhookAuthMethod,
+  ): Promise<{
     workflowId: string;
     url: string;
     absoluteUrl: boolean;
     armed: boolean;
+    authMethod: WebhookAuthMethod;
+    blocker: WebhookEndpointBlocker | null;
     createdAt: string;
   } | null> {
     const endpoints = await this.endpoints();
@@ -1077,11 +1203,30 @@ export class WorkflowRuntimeService {
     const absoluteUrl = this.webhookScope?.hasPublicOrigin ?? false;
 
     const minted = await endpoints.endpointFor(workflowId);
+    // The two faces are different URLs, so the author is shown the one their
+    // chosen method actually answers on rather than one that would 404.
+    const authMethod =
+      requestedAuthMethod ??
+      (registration?.kind === WEBHOOK_TRIGGER_KIND
+        ? registration.config.auth
+        : "path");
+    const renownUrl =
+      authMethod === "renown"
+        ? this.renownRoute.urlFor(minted.token)
+        : undefined;
+    // Only for the face actually asked about: the path face is unaffected by
+    // anything that stops the Renown one from being served.
+    const blocker =
+      authMethod === "renown" ? this.renownBlocker(renownUrl) : null;
     return {
       workflowId,
-      url: minted.url,
-      absoluteUrl,
-      armed,
+      // A blocked Renown face has no URL to give, and handing back the public
+      // one would advertise an endpoint the runtime has deliberately disarmed.
+      url: renownUrl ?? (blocker ? "" : minted.url),
+      absoluteUrl: renownUrl ? renownUrl.startsWith("http") : absoluteUrl,
+      armed: armed && blocker === null,
+      authMethod,
+      blocker,
       createdAt: minted.createdAt,
     };
   }

@@ -9,6 +9,9 @@ describe("parseWebhookConfig", () => {
   it("defaults to an unsigned async endpoint accepting any method", () => {
     expect(parseWebhookConfig({})).toEqual({
       methods: undefined,
+      auth: "path",
+      allowedAddresses: [],
+      allowedGroups: [],
       scheme: "none",
       header: "",
       secretRef: undefined,

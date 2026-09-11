@@ -15,6 +15,9 @@ export class WorkflowRuntimeSubgraph extends BaseSubgraph {
   // to this package's namespace, so its URL space is not ours to choose.
   async onSetup() {
     await workflowRuntime.registerWebhookEndpoint(this);
+    // The Renown-authenticated face of the same endpoints, on this scope
+    // rather than the reactor's public webhook family.
+    workflowRuntime.registerRenownWebhookRoute(this);
   }
 
   async onDisconnect() {}

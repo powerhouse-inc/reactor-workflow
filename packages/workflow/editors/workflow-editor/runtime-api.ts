@@ -359,6 +359,12 @@ export interface WebhookEndpointRecord {
   // False when `url` is a bare path because the reactor has no public origin.
   absoluteUrl: boolean;
   armed: boolean;
+  // "path" is the minted token in the URL and nothing more; "renown" also
+  // requires a verifiable bearer on the trigger's allow-list.
+  authMethod: "path" | "renown";
+  // Why a Renown endpoint cannot take deliveries, when it cannot. Null is the
+  // answer an author wants; anything else is a fault they can act on.
+  blocker: "RENOWN_ROUTE_UNAVAILABLE" | "NO_IDENTITY_RESOLUTION" | null;
   createdAt: string;
 }
 
@@ -366,18 +372,21 @@ export interface WebhookEndpointRecord {
 // tracks the workflow's status.
 export async function fetchWebhookEndpoint(
   workflowId: string,
+  // The author's chosen method, so a draft is shown the URL it is moving to
+  // rather than the one the registered trigger still answers on.
+  authMethod?: "path" | "renown",
 ): Promise<WebhookEndpointRecord | null> {
   const data = await gql<{
     workflowRuntime: { webhookEndpoint: WebhookEndpointRecord | null };
   }>(
-    `query WebhookEndpoint($workflowId: String!) {
+    `query WebhookEndpoint($workflowId: String!, $authMethod: String) {
       workflowRuntime {
-        webhookEndpoint(workflowId: $workflowId) {
-          workflowId url absoluteUrl armed createdAt
+        webhookEndpoint(workflowId: $workflowId, authMethod: $authMethod) {
+          workflowId url absoluteUrl armed authMethod blocker createdAt
         }
       }
     }`,
-    { workflowId },
+    { workflowId, authMethod: authMethod ?? null },
   );
   return data.workflowRuntime.webhookEndpoint;
 }

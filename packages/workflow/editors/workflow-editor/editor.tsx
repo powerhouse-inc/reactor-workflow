@@ -38,7 +38,8 @@ function WorkflowEditor() {
       getBlockForm,
       loadOptions: loadBlockOptions,
       testTrigger: () => testTrigger(workflowId),
-      webhookEndpoint: () => fetchWebhookEndpoint(workflowId),
+      webhookEndpoint: (authMethod) =>
+        fetchWebhookEndpoint(workflowId, authMethod),
       listConnections: fetchConnections,
       refreshConnections: invalidateConnections,
       secrets: {

@@ -67,7 +67,14 @@ export const schema: DocumentNode = gql`
     URL before enabling, and the armed field carries that difference. Null
     only when the host has no webhook service.
     """
-    webhookEndpoint(workflowId: String!): WebhookEndpointRecord
+    webhookEndpoint(
+      workflowId: String!
+      """
+      The method the author has chosen, for a draft whose trigger the runtime
+      has not registered yet. Omitted, the registered trigger decides.
+      """
+      authMethod: String
+    ): WebhookEndpointRecord
     """
     Secret metadata (label, version, status). Never the value.
     """
@@ -130,6 +137,21 @@ export const schema: DocumentNode = gql`
     absoluteUrl: Boolean!
     "True while the workflow is ENABLED with a valid webhook trigger"
     armed: Boolean!
+    """
+    How the endpoint authenticates a delivery: "path" is the minted token in
+    the URL and nothing more; "renown" additionally requires a verifiable
+    bearer whose signer is on the trigger's allow-list. The two are served on
+    different URLs, and url above is the one this method answers on.
+    """
+    authMethod: String!
+    """
+    Why a Renown endpoint cannot take deliveries, when it cannot:
+    RENOWN_ROUTE_UNAVAILABLE (this host is not serving the route) or
+    NO_IDENTITY_RESOLUTION (this reactor verifies no bearer, so the endpoint
+    can admit nobody). Null when nothing is wrong, and always null for the
+    path method, which none of this affects.
+    """
+    blocker: String
     createdAt: String!
   }
 

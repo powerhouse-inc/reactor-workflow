@@ -69,6 +69,12 @@ export interface WebhookEndpoint {
   // False when `url` is a bare path because the reactor has no public origin.
   absoluteUrl: boolean;
   armed: boolean;
+  // How the endpoint authenticates a delivery. The two methods answer on
+  // different URLs, so `url` above is the one this method serves.
+  authMethod: "path" | "renown";
+  // Why a Renown endpoint cannot take deliveries, when it cannot. Null is the
+  // answer an author wants; anything else is a fault they can act on.
+  blocker: "RENOWN_ROUTE_UNAVAILABLE" | "NO_IDENTITY_RESOLUTION" | null;
   createdAt: string;
 }
 
@@ -83,7 +89,9 @@ export interface DesignTimeService {
   // Runs the current workflow's piece trigger test hook; sample items back.
   testTrigger?: () => Promise<unknown>;
   // The current workflow's webhook endpoint, for core#webhook triggers.
-  webhookEndpoint?: () => Promise<WebhookEndpoint | null>;
+  webhookEndpoint?: (
+    authMethod?: "path" | "renown",
+  ) => Promise<WebhookEndpoint | null>;
   // Backs PH_SECRET_REF props; absent when the runtime refuses secret writes.
   secrets?: SecretFormService;
   // powerhouse/connection documents for the connection picker.
