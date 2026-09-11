@@ -161,6 +161,37 @@ function inCidr(address: Uint8Array, cidr: Cidr): boolean {
 
 const PRIVATE = PRIVATE_RANGES.map(parseCidr);
 
+type NativeLookup = (
+  hostname: string,
+  options: dns.LookupOneOptions,
+  callback: (error: Error | null, address: unknown, family?: number) => void,
+) => void;
+
+// getaddrinfo, taken before anything is patched: the guard resolves through
+// this so its own lookups never meet the refusal it installs below.
+const nativeLookup = originalOf<NativeLookup>(dns, "lookup");
+
+// c-ares, which owns its sockets and never passes through dgram or connect.
+
+// A query is a channel out on its own — the data rides in the name — so the
+// answer is irrelevant and the whole surface is refused under a policy.
+const RESOLVER_METHODS = [
+  "resolve",
+  "resolve4",
+  "resolve6",
+  "resolveAny",
+  "resolveCaa",
+  "resolveCname",
+  "resolveMx",
+  "resolveNaptr",
+  "resolveNs",
+  "resolvePtr",
+  "resolveSoa",
+  "resolveSrv",
+  "resolveTxt",
+  "reverse",
+];
+
 export function isPrivateAddress(value: string): boolean {
   const bytes = parseAddress(value);
   // An address we cannot classify counts as private: fail closed.
@@ -291,7 +322,7 @@ function guardedLookup(
 ): (hostname: string, options: unknown, callback: LookupCallback) => void {
   return (hostname, options, callback) => {
     const asked = options as { all?: boolean };
-    dns.lookup(
+    nativeLookup(
       hostname,
       options as dns.LookupOneOptions,
       (error: Error | null, result: unknown, family?: number) => {
@@ -384,6 +415,37 @@ function originalOf<T>(target: object, name: string): T {
   return Object.getOwnPropertyDescriptor(target, name)?.value as T;
 }
 
+function resolverDenial(method: string, args: unknown[]): EgressDeniedError {
+  const host = typeof args[0] === "string" ? args[0] : "";
+  return new EgressDeniedError(
+    `DNS ${method}("${host}") is not permitted; use a hostname in a request instead`,
+    { host },
+  );
+}
+
+// Refuses every c-ares entry point on one object, in the shape its callers
+// expect: a rejected promise here, a callback error there.
+function refuseResolvers(target: object, promised: boolean): void {
+  for (const method of RESOLVER_METHODS) {
+    const original = originalOf<(this: unknown, ...args: unknown[]) => unknown>(
+      target,
+      method,
+    );
+    if (typeof original !== "function") continue;
+    function refused(this: unknown, ...args: unknown[]): unknown {
+      if (policiesInForce().length === 0) return original.apply(this, args);
+      const denied = resolverDenial(method, args);
+      if (promised) return Promise.reject(denied);
+      const callback = args[args.length - 1];
+      // No callback is a programming error Node would throw on anyway.
+      if (typeof callback !== "function") throw denied;
+      process.nextTick(() => (callback as (error: Error) => void)(denied));
+      return undefined;
+    }
+    seal(target, method, refused);
+  }
+}
+
 // Sealed so a piece holding the pristine implementation cannot put it back, and
 // so a later assignment cannot quietly unhook the guard.
 function seal(target: object, name: string, value: unknown): void {
@@ -435,8 +497,8 @@ export function installEgressGuard(): void {
   }
   seal(net.Socket.prototype, "connect", patchedConnect);
 
-  // UDP carries no destination a policy can usefully allow — a piece's work is
-  // HTTP — and it is a working exfiltration channel, so it is closed whole.
+  // The dgram surface carries no destination a policy can usefully allow — a
+  // piece's work is HTTP — so it is refused whole, as is c-ares further down.
   const send = originalOf<(this: dgram.Socket, ...args: unknown[]) => void>(
     dgram.Socket.prototype,
     "send",
@@ -494,6 +556,13 @@ export function installEgressGuard(): void {
     return this;
   }
   seal(net.Server.prototype, "listen", patchedListen);
+
+  // The four objects a piece can reach c-ares through; dns.lookup is
+  // getaddrinfo and stays open, guarded per connect instead.
+  refuseResolvers(dns, false);
+  refuseResolvers(dns.Resolver.prototype, false);
+  refuseResolvers(dns.promises, true);
+  refuseResolvers(dns.promises.Resolver.prototype, true);
 }
 
 // True for a denial raised in the child, including one a piece's client
