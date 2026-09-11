@@ -45,6 +45,9 @@ export class GroupMembers {
   readonly #ttlMs: number;
   readonly #now: () => number;
   readonly #cache = new Map<string, CacheEntry>();
+  // Bumped per group by `invalidate`, so a read already in flight when the
+  // edit landed is recognised as predating it and dropped rather than stored.
+  readonly #generation = new Map<string, number>();
 
   constructor(
     load: GroupLoader,
@@ -55,14 +58,24 @@ export class GroupMembers {
     this.#now = options.now ?? Date.now;
   }
 
-  /** Drops a group's cached membership, so the next delivery re-reads it. The
-   * runtime sees every document's operations, so an edit lands here at once. */
+  /** Expires a group's cached membership, so the next delivery re-reads it.
+   * The runtime sees every document's operations, so an edit lands here at
+   * once. */
   invalidate(documentId: string): void {
-    this.#cache.delete(documentId);
+    this.#generation.set(documentId, this.#age(documentId) + 1);
+    // Expired, not dropped: deleting it would leave the failed-read path below
+    // with no last known members to stand on, and a blip would revoke everyone.
+    const entry = this.#cache.get(documentId);
+    if (entry) entry.expiresAt = 0;
+  }
+
+  #age(documentId: string): number {
+    return this.#generation.get(documentId) ?? 0;
   }
 
   clear(): void {
     this.#cache.clear();
+    this.#generation.clear();
   }
 
   async resolve(groupIds: readonly string[]): Promise<GroupResolution> {
@@ -77,7 +90,14 @@ export class GroupMembers {
       // One read for every stale group, not one per group: a trigger naming
       // several groups must not cost several round trips per delivery.
       const loaded = await this.#loadInto(stale, now);
-      if (!loaded) {
+      if (loaded) {
+        // An edit that landed mid-read discards that group's result. One
+        // re-read settles it, rather than authorizing from a known-stale list.
+        const again = stale.filter(
+          (id) => (this.#cache.get(id)?.expiresAt ?? 0) <= this.#now(),
+        );
+        if (again.length > 0) await this.#loadInto(again, this.#now());
+      } else {
         // A failed read must not widen access, and must not narrow it to
         // nothing on a blip either: whatever is still cached stands.
         for (const id of stale) {
@@ -103,6 +123,7 @@ export class GroupMembers {
   }
 
   async #loadInto(ids: string[], now: number): Promise<boolean> {
+    const startedAt = new Map(ids.map((id) => [id, this.#age(id)]));
     let records: GroupRecord[];
     try {
       records = await this.#load(ids);
@@ -116,6 +137,7 @@ export class GroupMembers {
     }
     const byId = new Map(records.map((record) => [record.id, record.members]));
     for (const id of ids) {
+      if (this.#age(id) !== startedAt.get(id)) continue;
       const members = byId.get(id);
       this.#cache.set(id, {
         members: members?.map((member) => member.trim().toLowerCase()),

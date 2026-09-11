@@ -148,6 +148,12 @@ export interface RenownWebhookPort {
 // request on a route anyone can reach.
 export const TOKEN_TTL_MS = 60_000;
 export const MISS_TTL_MS = 5_000;
+// The per-token miss table only stops one token repeating; a caller sending a
+// fresh invented token each time would still list the store once per request.
+
+// So a listing started from cold by an unknown token happens at most this
+// often. Minting is unaffected: a new token resolves on the next listing.
+export const REFRESH_FLOOR_MS = MISS_TTL_MS;
 const MISS_TABLE_LIMIT = 1_000;
 
 export class TokenIndex {
@@ -190,7 +196,14 @@ export class TokenIndex {
       await this.#refreshing;
       return;
     }
+    // A listing we joined may predate the token, so one of our own settles it,
+    // and every joiner's retry coalesces into that single listing.
+    const joined = this.#refreshing !== undefined;
     if (this.#refreshing) await this.#refreshing;
+
+    // Starting one from cold does not coalesce — it is one listing per caller,
+    // on a route anyone can reach — so that path waits out the floor instead.
+    if (!joined && this.#now() - this.#readAt < REFRESH_FLOOR_MS) return;
     await this.#refresh();
   }
 
@@ -251,6 +264,9 @@ export class RenownWebhookRoute {
   readonly #port: RenownWebhookPort;
   readonly #tokens: TokenIndex;
   #baseUrl?: string;
+  // The scope the route is attached to. A hot reload builds a new one, and a
+  // route left on the old scope is a route nothing reaches any more.
+  #scope?: RenownRouteScope;
   #identity: IdentityResolution = "unknown";
   #warnedNoIdentity = false;
 
@@ -267,6 +283,12 @@ export class RenownWebhookRoute {
 
   get registered(): boolean {
     return this.#baseUrl !== undefined;
+  }
+
+  /** Whether this scope already carries the route, which is what makes
+   * registering idempotent without pinning it to the first scope ever seen. */
+  registeredOn(scope: RenownRouteScope): boolean {
+    return this.#scope === scope;
   }
 
   // What deliveries have revealed about the host's own auth. Nothing on the
@@ -289,6 +311,7 @@ export class RenownWebhookRoute {
       auth: "renown-optional",
       handler: (req, res, ctx) => this.handle(req, res, ctx),
     });
+    this.#scope = scope;
     // Only once the scope accepted the route: a throw must leave this
     // unregistered, so the editor can say the face is not being served.
     this.#baseUrl = scope.baseUrl.replace(/\/+$/, "");
@@ -386,11 +409,16 @@ export class RenownWebhookRoute {
   ): void {
     // The token is not logged: it still addresses the endpoint, and the
     // refusal is the record an operator has to be able to read back.
-    logger.warn(
-      "Rejected a Renown webhook delivery for @workflow: @reason",
-      workflowId ?? "an unknown endpoint",
-      refusal.reason,
-    );
+
+    // A host with no identity resolution is reported once by #observeIdentity;
+    // repeating it per delivery would bury the refusals a reader can act on.
+    if (refusal.status !== 503) {
+      logger.warn(
+        "Rejected a Renown webhook delivery for @workflow: @reason",
+        workflowId ?? "an unknown endpoint",
+        refusal.reason,
+      );
+    }
     writeRefusal(res, refusal);
   }
 }

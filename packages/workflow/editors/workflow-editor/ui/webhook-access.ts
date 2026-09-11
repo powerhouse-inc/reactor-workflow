@@ -42,11 +42,17 @@ function asRecord(config: unknown): Record<string, unknown> {
   return {};
 }
 
+// The runtime's parsers accept a lone value where a list is expected, so one
+// read as no list at all would show a live grant as absent — and the next edit
+// would write that absence back. Coerced the same way here.
+function asList(value: unknown): unknown[] {
+  if (value === undefined || value === null) return [];
+  return Array.isArray(value) ? value : [value];
+}
+
 export function readWebhookAccess(config: unknown): WebhookAccess {
   const record = asRecord(config);
-  const entries = Array.isArray(record.allowedAddresses)
-    ? record.allowedAddresses
-    : [];
+  const entries = asList(record.allowedAddresses);
   const allowed: string[] = [];
   const invalid: string[] = [];
   for (const entry of entries) {
@@ -56,14 +62,16 @@ export function readWebhookAccess(config: unknown): WebhookAccess {
       invalid.push(typeof entry === "string" ? entry : JSON.stringify(entry));
     }
   }
-  const groups = Array.isArray(record.allowedGroups)
-    ? record.allowedGroups.filter(
-        (entry): entry is string =>
-          typeof entry === "string" && entry.trim() !== "",
-      )
-    : [];
+  const groups = asList(record.allowedGroups).filter(
+    (entry): entry is string =>
+      typeof entry === "string" && entry.trim() !== "",
+  );
+  // Lowercased, as the runtime's parseEnum does: "RENOWN" arms the Renown
+  // face, and reading it as the path one would show the wrong URL.
+  const auth =
+    typeof record.auth === "string" ? record.auth.trim().toLowerCase() : "";
   return {
-    method: record.auth === "renown" ? "renown" : "path",
+    method: auth === "renown" ? "renown" : "path",
     allowed,
     invalid,
     groups: [...new Set(groups.map((entry) => entry.trim()))],

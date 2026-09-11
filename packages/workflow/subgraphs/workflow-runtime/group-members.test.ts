@@ -88,6 +88,49 @@ describe("GroupMembers", () => {
     expect(resolved.missing).toEqual(["eng"]);
   });
 
+  it("keeps the last known members when the read after an edit fails", async () => {
+    // The invalidation is what makes this the dangerous case: without members
+    // to fall back on, one failed read would revoke the whole group.
+    const { load } = store({ eng: [ALICE] });
+    const members = new GroupMembers(load);
+    expect((await members.resolve(["eng"])).members).toEqual([ALICE]);
+
+    members.invalidate("eng");
+    load.mockRejectedValueOnce(new Error("reactor unreachable"));
+
+    const resolved = await members.resolve(["eng"]);
+    expect(resolved.members).toEqual([ALICE]);
+    expect(resolved.missing).toEqual([]);
+  });
+
+  it("discards a read that began before the edit that invalidated it", async () => {
+    const { groups, load } = store({ eng: [ALICE, CAROL] });
+    const members = new GroupMembers(load);
+    await members.resolve(["eng"]);
+
+    // Reads the group when the call is made, not when it is released, so the
+    // result carries the membership as it stood before the edit below.
+    let release: (() => void) | undefined;
+    load.mockImplementationOnce(() => {
+      const snapshot = [...(groups.get("eng") ?? [])];
+      return new Promise((resolve) => {
+        release = () => resolve([{ id: "eng", members: snapshot }]);
+      });
+    });
+
+    members.invalidate("eng");
+    const pending = members.resolve(["eng"]);
+    await vi.waitFor(() => expect(release).toBeDefined());
+
+    // Carol is removed while that read is in flight; its snapshot still has her.
+    groups.set("eng", [ALICE]);
+    members.invalidate("eng");
+    release?.();
+
+    expect((await pending).members).toEqual([ALICE]);
+    expect(load).toHaveBeenCalledTimes(3);
+  });
+
   it("reports a group that never existed without failing the others", async () => {
     const { load } = store({ eng: [ALICE] });
     const resolved = await new GroupMembers(load).resolve(["eng", "ghost"]);

@@ -42,7 +42,9 @@ export function GroupModal(props: {
       open
       title="Group"
       onOpenChange={(open) => {
-        if (!open) props.onDone(props.groupId);
+        // Dismissing is not choosing: only the button below reports the id, so
+        // closing a group just created never adds it to the allow-list.
+        if (!open) props.onDone(null);
       }}
       contentProps={{
         className: "max-h-[85vh] w-[36rem] max-w-[92vw] overflow-y-auto",
@@ -99,26 +101,31 @@ export function GroupModal(props: {
                     key={address}
                     address={address}
                     isSelf={sameAddress(address, user?.address)}
-                    onRemove={() =>
-                      dispatch?.(actions.removeMember({ address }))
+                    onRemove={
+                      dispatch
+                        ? () => dispatch(actions.removeMember({ address }))
+                        : undefined
                     }
                   />
                 ))}
               </ul>
             )}
 
-            <AddressInput
-              existing={members}
-              onAdd={(address) => dispatch?.(actions.addMember({ address }))}
-            />
+            {dispatch ? (
+              <AddressInput
+                existing={members}
+                onAdd={(address) => dispatch(actions.addMember({ address }))}
+              />
+            ) : null}
 
-            {user?.address &&
+            {dispatch &&
+            user?.address &&
             !members.some((entry) => sameAddress(entry, user.address)) ? (
               <button
                 type="button"
                 className="self-start rounded border border-slate-300 px-2 py-1 text-[11px] text-slate-600 hover:border-slate-400"
                 onClick={() =>
-                  dispatch?.(actions.addMember({ address: user.address }))
+                  dispatch(actions.addMember({ address: user.address }))
                 }
               >
                 Add yourself

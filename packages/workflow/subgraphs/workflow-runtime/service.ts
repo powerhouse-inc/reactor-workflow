@@ -391,6 +391,10 @@ export class WorkflowRuntimeService {
   configure(subgraph: BaseSubgraph): void {
     if (this.subgraph === subgraph) return;
     this.subgraph = subgraph;
+    // Members were read through the subgraph being replaced. A group id reused
+    // by the new one must not answer from the old one's documents.
+    this.groups.clear();
+    this.registerRenownWebhookRoute(subgraph);
     this.storePromise = WorkflowRunStore.create(subgraph.relationalDb);
     this.storePromise.catch((error: unknown) => {
       logger.error("Failed to open the workflow run store", error);
@@ -1023,23 +1027,32 @@ export class WorkflowRuntimeService {
     deliver: (request) => this.deliverWebhook(request),
   });
 
-  /** Registers the Renown face (from onSetup; idempotent). Separate from the
-   * webhook registration because the scope, not the webhook service, hosts it. */
+  /** Registers the Renown face, from onSetup and from configure; idempotent
+   * per scope. Separate from the webhook registration because the scope, not
+   * the webhook service, is what hosts it. */
   registerRenownWebhookRoute(subgraph: BaseSubgraph): void {
-    if (this.renownRoute.registered) return;
+    // Keyed on the scope, not on "registered once": a hot reload builds a new
+    // subgraph, and the route has to move to the scope now being served.
+    if (this.renownRoute.registeredOn(subgraph.http)) return;
     try {
       this.renownRoute.register(subgraph.http);
     } catch (error) {
       // A host with no route scope loses Renown webhooks, not every workflow:
       // the manager awaits onSetup, so throwing would take the subgraph down.
 
-      // Nothing is latched, so a later call retries; the editor reads the
-      // failure as a blocker rather than being handed a URL that 404s.
+      // Nothing is latched, so the design-time path below retries; until one
+      // succeeds the editor reads a blocker rather than a URL that 404s.
       logger.warn(
         "Renown-authenticated webhooks are unavailable on this host; other triggers are unaffected",
         error,
       );
     }
+  }
+
+  /** Retries a registration that failed, from a path an author reaches. Cheap
+   * when it already succeeded: the scope check above answers without work. */
+  private retryRenownRegistration(): void {
+    if (this.subgraph) this.registerRenownWebhookRoute(this.subgraph);
   }
 
   // Group references resolve per delivery rather than when the workflow was
@@ -1205,11 +1218,15 @@ export class WorkflowRuntimeService {
     const minted = await endpoints.endpointFor(workflowId);
     // The two faces are different URLs, so the author is shown the one their
     // chosen method actually answers on rather than one that would 404.
-    const authMethod =
-      requestedAuthMethod ??
-      (registration?.kind === WEBHOOK_TRIGGER_KIND
+    const registeredMethod: WebhookAuthMethod =
+      registration?.kind === WEBHOOK_TRIGGER_KIND
         ? registration.config.auth
-        : "path");
+        : "path";
+    const authMethod = requestedAuthMethod ?? registeredMethod;
+    // A draft method is a preview of a URL, not an arming of it: the face the
+    // registry is not serving would refuse the delivery it just invited.
+    const servesRequested = authMethod === registeredMethod;
+    if (authMethod === "renown") this.retryRenownRegistration();
     const renownUrl =
       authMethod === "renown"
         ? this.renownRoute.urlFor(minted.token)
@@ -1224,7 +1241,7 @@ export class WorkflowRuntimeService {
       // one would advertise an endpoint the runtime has deliberately disarmed.
       url: renownUrl ?? (blocker ? "" : minted.url),
       absoluteUrl: renownUrl ? renownUrl.startsWith("http") : absoluteUrl,
-      armed: armed && blocker === null,
+      armed: armed && servesRequested && blocker === null,
       authMethod,
       blocker,
       createdAt: minted.createdAt,

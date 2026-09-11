@@ -447,14 +447,32 @@ describe("WorkflowRuntimeService webhooks", () => {
 describe("WorkflowRuntimeService registry seeding", () => {
   // A subgraph is rebuilt on every package hot-reload, and the service is a
   // module singleton, so `configure` sees a new one each time.
-  function fakeSubgraph(workflows: unknown[]) {
+  function fakeSubgraph(workflows: unknown[], baseUrl = "http://host/wf") {
     const find = vi.fn(() => Promise.resolve({ results: workflows }));
+    const nodeRoute = vi.fn();
+    const endpoints = {
+      endpointFor: vi.fn(() =>
+        Promise.resolve({
+          token: "tok",
+          url: "https://host/webhooks/tok",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ),
+      revoke: vi.fn(),
+      list: vi.fn(() => Promise.resolve([])),
+    };
     return {
       find,
+      nodeRoute,
+      endpoints,
       subgraph: {
         relationalDb: undefined,
         reactorClient: { find },
-        http: { webhooks: { register: () => Promise.reject(new Error("no")) } },
+        http: {
+          webhooks: { register: () => Promise.resolve(endpoints) },
+          baseUrl,
+          nodeRoute,
+        },
       } as never,
     };
   }
@@ -485,6 +503,60 @@ describe("WorkflowRuntimeService registry seeding", () => {
     const second = fakeSubgraph([enabledWorkflow("wf-1")]);
     service.configure(second.subgraph);
     await vi.waitFor(() => expect(second.find).toHaveBeenCalledOnce());
+  });
+
+  it("moves the Renown route to the scope a hot reload hands it", async () => {
+    // Registration used to latch on "registered once", leaving the route on a
+    // scope nothing reaches and `urlFor` advertising the dead base URL.
+    const service = new WorkflowRuntimeService();
+    const first = fakeSubgraph([], "http://host/first");
+    service.configure(first.subgraph);
+    expect(first.nodeRoute).toHaveBeenCalledOnce();
+
+    const second = fakeSubgraph([], "http://host/second");
+    service.configure(second.subgraph);
+    expect(second.nodeRoute).toHaveBeenCalledOnce();
+    await service.registerWebhookEndpoint(second.subgraph);
+
+    const endpoint = await service.webhookEndpoint("wf-1", "renown");
+    expect(endpoint?.url.startsWith("http://host/second")).toBe(true);
+  });
+
+  it("retries a Renown registration that failed, when the URL is asked for", async () => {
+    const service = new WorkflowRuntimeService();
+    const failing = fakeSubgraph([]);
+    failing.nodeRoute.mockImplementationOnce(() => {
+      throw new Error("no route scope");
+    });
+    service.configure(failing.subgraph);
+    await service.registerWebhookEndpoint(failing.subgraph);
+    expect(await service.webhookEndpoint("wf-1", "renown")).toMatchObject({
+      blocker: null,
+    });
+    expect(failing.nodeRoute).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not arm a draft face the registry is not serving", async () => {
+    // Previewing the Renown URL for a path-registered trigger used to come
+    // back armed, for a delivery the access check would answer with a 404.
+    const service = new WorkflowRuntimeService();
+    const host = fakeSubgraph([enabledWorkflow("wf-1")]);
+    service.configure(host.subgraph);
+    service.registerRenownWebhookRoute(host.subgraph);
+    await service.registerWebhookEndpoint(host.subgraph);
+    await vi.waitFor(() => expect(host.find).toHaveBeenCalledOnce());
+
+    expect(await service.webhookEndpoint("wf-1")).toMatchObject({
+      authMethod: "path",
+      armed: true,
+    });
+    // Nothing is blocking the Renown face; it is simply not the one the
+    // registry is serving, which is the whole difference being asserted.
+    expect(await service.webhookEndpoint("wf-1", "renown")).toMatchObject({
+      authMethod: "renown",
+      blocker: null,
+      armed: false,
+    });
   });
 
   it("does not re-seed when handed the same subgraph twice", async () => {

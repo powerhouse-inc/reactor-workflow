@@ -185,3 +185,24 @@ describe("groups in the allow-list", () => {
     expect(access.groups).toEqual(["g1"]);
   });
 });
+
+describe("reading a config the runtime would accept", () => {
+  // The runtime's parser wraps a lone value and lowercases the auth name.
+  // Reading either differently shows a live grant as absent, and the next
+  // edit writes that absence back.
+  it("reads a lone address as the list the runtime makes of it", () => {
+    const access = readWebhookAccess({ allowedAddresses: ALICE });
+    expect(access.allowed).toEqual([ALICE]);
+    expect(access.invalid).toEqual([]);
+  });
+
+  it("reads a lone group as the list the runtime makes of it", () => {
+    expect(readWebhookAccess({ allowedGroups: "g1" }).groups).toEqual(["g1"]);
+  });
+
+  it("reads an auth method however it is cased", () => {
+    expect(readWebhookAccess({ auth: "RENOWN" }).method).toBe("renown");
+    expect(readWebhookAccess({ auth: " Renown " }).method).toBe("renown");
+    expect(readWebhookAccess({ auth: "path" }).method).toBe("path");
+  });
+});

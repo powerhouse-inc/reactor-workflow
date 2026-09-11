@@ -42,7 +42,8 @@ export function AddressMark(props: { address: string }) {
 export function IdentityRow(props: {
   address: string;
   isSelf?: boolean;
-  onRemove: () => void;
+  /** Omitted where the reader cannot edit the list; the row still copies. */
+  onRemove?: () => void;
 }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -72,14 +73,16 @@ export function IdentityRow(props: {
       >
         {copied ? "Copied" : "Copy"}
       </button>
-      <button
-        type="button"
-        className="shrink-0 rounded border border-slate-300 px-2 text-xs text-slate-500 hover:border-red-300 hover:text-red-600"
-        title="Revoke this identity's access"
-        onClick={props.onRemove}
-      >
-        Remove
-      </button>
+      {props.onRemove ? (
+        <button
+          type="button"
+          className="shrink-0 rounded border border-slate-300 px-2 text-xs text-slate-500 hover:border-red-300 hover:text-red-600"
+          title="Revoke this identity's access"
+          onClick={props.onRemove}
+        >
+          Remove
+        </button>
+      ) : null}
     </li>
   );
 }

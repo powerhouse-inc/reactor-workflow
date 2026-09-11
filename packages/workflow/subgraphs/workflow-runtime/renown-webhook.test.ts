@@ -9,6 +9,7 @@ import { GroupMembers } from "./group-members.js";
 import {
   decideRenownDelivery,
   MISS_TTL_MS,
+  REFRESH_FLOOR_MS,
   RENOWN_WEBHOOK_PATH,
   RenownWebhookRoute,
   TOKEN_TTL_MS,
@@ -489,6 +490,24 @@ describe("the token index", () => {
 
     clock = MISS_TTL_MS + 1;
     await deliverTo(route, { address: ALICE, token: "ghost" });
+    expect(list).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not list the store once per invented token", async () => {
+    // The miss table only stops one token repeating. A caller sending a fresh
+    // token each time would otherwise buy a store-wide listing per request.
+    const list = listing([]);
+    let clock = 0;
+    const route = routeWith(list as never, () => clock);
+    for (let i = 0; i < 20; i++) {
+      clock = i;
+      await deliverTo(route, { address: ALICE, token: `ghost-${i}` });
+    }
+    expect(list).toHaveBeenCalledTimes(1);
+
+    // The floor is a delay, not a refusal: a token minted meanwhile resolves.
+    clock = REFRESH_FLOOR_MS + 1;
+    await deliverTo(route, { address: ALICE, token: "ghost-fresh" });
     expect(list).toHaveBeenCalledTimes(2);
   });
 
