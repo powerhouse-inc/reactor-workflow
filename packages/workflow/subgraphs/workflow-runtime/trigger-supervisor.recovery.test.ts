@@ -25,6 +25,7 @@ vi.mock("@powerhousedao/reactor-connectors", async (importOriginal) => {
   };
 });
 
+import { SCHEDULE_BLOCK } from "./schedule.js";
 import { WorkflowRunStore } from "./store.js";
 import {
   TriggerSupervisor,
@@ -333,6 +334,78 @@ describe("TriggerSupervisor robustness", () => {
     expect(row?.consecutive_failures).toBe(1);
     expect(row?.next_poll_at).toBe(retryAt);
     restarted.stop();
+  });
+
+  it("rejects the null a serialised NaN cursor arrives as", async () => {
+    const wf = "wf-cursor-null";
+    const key = `flow_${wf}/lastPoll`;
+    const good = Date.parse("2026-09-04T08:55:00.000Z");
+    stub.enable = () => result({ storeState: { [key]: good } });
+    await supervisor.upsert(binding(wf));
+
+    // jsonSafe in the worker turns the piece's NaN into null before we see it.
+    stub.run = () => result({ output: [], storeState: { [key]: null } });
+    await forceDue(wf);
+    await supervisor.tick();
+    expect(await cursorOf(wf)).toBe(good);
+
+    const fresh = "wf-cursor-null-fresh";
+    stub.enable = () =>
+      result({ storeState: { [`flow_${fresh}/lastPoll`]: null } });
+    await supervisor.upsert(binding(fresh));
+    const row = await store.getTriggerState(fresh);
+    expect(JSON.parse(row!.store_state)).toEqual({});
+  });
+
+  it("takes the retry with it when the trigger becomes a schedule", async () => {
+    const wf = "wf-kind-change";
+    const other = "wf-kind-other";
+    stub.enable = () => {
+      throw new Error("the provider is down");
+    };
+    await supervisor.upsert(binding(wf));
+    await supervisor.upsert(binding(other));
+
+    calls = [];
+    await supervisor.upsert({
+      kind: "schedule",
+      workflowId: wf,
+      blockType: SCHEDULE_BLOCK,
+      config: { mode: "interval", every: 5, unit: "minutes" },
+    });
+    // The piece binding it replaced is what names the registration to release.
+    expect(calls).toEqual([{ hook: "onDisable", isRepublish: undefined }]);
+    expect((await store.getTriggerState(wf))?.status).toBe("ENABLED");
+
+    // The stranded entry would have taken the one retry slot on every tick.
+    calls = [];
+    setClock("2026-09-04T09:02:00.000Z");
+    await supervisor.tick();
+    expect(calls.map((call) => call.hook)).toEqual(["onDisable", "onEnable"]);
+  });
+
+  it("holds the interval floor when the retry itself throws", async () => {
+    const wf = "wf-retry-floor";
+    supervisor = newSupervisor({ defaultIntervalMs: 10_000 });
+    stub.enable = () => {
+      throw new Error("the provider is down");
+    };
+    await supervisor.upsert(binding(wf));
+
+    dbBroken = true;
+    setClock("2026-09-04T09:02:00.000Z");
+    await supervisor.tick();
+
+    dbBroken = false;
+    stub.enable = () => result();
+    // Four floored minutes out, not four times the sub-floor default.
+    setClock("2026-09-04T09:02:40.000Z");
+    await supervisor.tick();
+    expect((await store.getTriggerState(wf))?.status).toBe("ERROR");
+
+    setClock("2026-09-04T09:06:00.000Z");
+    await supervisor.tick();
+    expect((await store.getTriggerState(wf))?.status).toBe("ENABLED");
   });
 
   it("keeps the cursor when the worker reports no store state at all", async () => {

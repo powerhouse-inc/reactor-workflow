@@ -195,6 +195,12 @@ function showCursor(value: unknown): string {
   return typeof value === "number" ? String(value) : JSON.stringify(value);
 }
 
+// The worker JSON-serialises the store before we see it, so a NaN or Infinity
+// cursor arrives as null — still ours to reject, just no longer a number.
+function isCursorShaped(value: unknown): boolean {
+  return value === null || typeof value === "number";
+}
+
 // The cursor comes back unchecked: `Math.max` over one unparseable date yields
 // NaN, which then re-delivers the whole feed forever, or nothing ever again.
 
@@ -214,9 +220,9 @@ function sanitizeStoreState(
     if (key !== CURSOR_KEY && !key.endsWith(`/${CURSOR_KEY}`)) continue;
     if (isPlausibleCursor(value, now)) continue;
     const kept = previous[key];
-    // Only the numeric cursor is ours to police: a piece that keeps its own
+    // Only our own cursor shape is ours to police: a piece that keeps its own
     // `lastPoll` as a string or an object is left to it.
-    if (typeof value !== "number" && !isPlausibleCursor(kept, now)) continue;
+    if (!isCursorShaped(value) && !isPlausibleCursor(kept, now)) continue;
     const keptLabel = isPlausibleCursor(kept, now) ? String(kept) : "no cursor";
     logger.warn(
       `Rejected ${key}=${showCursor(value)} from workflow ${workflowId}; ` +
@@ -298,7 +304,9 @@ export class TriggerSupervisor {
       return Promise.resolve();
     }
     this.bindings.set(binding.workflowId, binding);
-    return this.enqueue(() => this.enable(binding));
+    // The binding it replaces is the only thing that can still name the old
+    // registration: the row holds neither the config nor the connection.
+    return this.enqueue(() => this.enable(binding, previous));
   }
 
   remove(workflowId: string): Promise<void> {
@@ -442,7 +450,10 @@ export class TriggerSupervisor {
     return trigger?.strategy ?? "POLLING";
   }
 
-  private async enable(binding: TriggerBinding): Promise<void> {
+  private async enable(
+    binding: TriggerBinding,
+    superseded?: TriggerBinding,
+  ): Promise<void> {
     const store = await this.options.store();
     if (!store) return;
     const hash = configHash(binding.blockType, binding.config);
@@ -454,14 +465,20 @@ export class TriggerSupervisor {
       existing?.config_hash === hash && existing.status === "ENABLED";
     if (existing && !isRepublish && existing.status === "ENABLED") {
       // The trigger changed: release the old registration first.
-      await this.disableRow(binding.workflowId, existing);
+      await this.disableRow(binding.workflowId, existing, superseded);
     }
+    const pending = this.enableRetries.get(binding.workflowId);
     if (isSchedule(binding)) {
+      // A piece trigger replaced by core#schedule takes its retry with it;
+      // left behind, the entry wins a slot on every tick and never resolves.
+      this.enableRetries.delete(binding.workflowId);
+      if (pending?.release && existing && superseded && !isSchedule(superseded)) {
+        await this.releaseRegistration(superseded, existing);
+      }
       await this.enableSchedule(store, binding, hash, existing);
       return;
     }
     if (this.deferToStoredRetry(binding, hash, existing, now)) return;
-    const pending = this.enableRetries.get(binding.workflowId);
     if (pending?.release && existing) {
       // The failed attempt may have subscribed at the provider already, and
       // only one subscription is ever released; drop it before making another.
@@ -606,6 +623,10 @@ export class TriggerSupervisor {
     return true;
   }
 
+  // Best effort: the ids a piece unsubscribes with reach us only when onEnable
+  // returns, so a timed-out first attempt has nothing here to release with.
+
+  // Closing that gap needs the worker to report store writes as they happen.
   private async releaseRegistration(
     binding: PieceTriggerBinding,
     row: TriggerStateRow,
@@ -747,8 +768,13 @@ export class TriggerSupervisor {
       await this.enable(binding);
     } catch (error) {
       const failures = retry.failures + 1;
+      // The same cadence the attempt itself would have backed off on: a store
+      // that just failed is the last thing to poll faster than configured.
+      const intervalMs = isSchedule(binding)
+        ? MIN_INTERVAL_MS
+        : pollIntervalFor(binding, undefined, this.defaultIntervalMs);
       this.enableRetries.set(workflowId, {
-        at: now + backoffMs(this.defaultIntervalMs, failures),
+        at: now + backoffMs(intervalMs, failures),
         failures,
         release: retry.release,
       });
