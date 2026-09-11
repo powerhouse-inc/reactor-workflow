@@ -7,7 +7,10 @@ import type {
   PieceStorePort,
   StoreScopeName,
 } from "@powerhousedao/reactor-connectors";
+import { childLogger } from "document-model";
 import type { WorkflowRunStore } from "./store.js";
+
+const logger = childLogger(["workflow", "piece-store"]);
 
 // PROJECT means "shared by every workflow in the project", and this reactor is
 // that project: the trigger registry, the run journal and the secret store are
@@ -35,10 +38,44 @@ export function testPartitionKey(
   return base + TEST_PARTITION_SUFFIX;
 }
 
+// pollingHelper's cursor. Math.max over one unparseable date yields NaN, which
+// then re-delivers the whole feed forever, or nothing ever again.
+const CURSOR_KEY = "lastPoll";
+
+// A provider's clock can run ahead of ours; beyond a day it is not skew, it is
+// a cursor that would hold the trigger silent until that date passes.
+const MAX_CURSOR_SKEW_MS = 24 * 60 * 60_000;
+
+function isPlausibleCursor(value: unknown, now: number): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value > 0 &&
+    value <= now + MAX_CURSOR_SKEW_MS
+  );
+}
+
+// The worker JSON-serialises what it writes, so a NaN or Infinity cursor
+// arrives as null — still ours to reject, just no longer a number.
+function isCursorShaped(value: unknown): boolean {
+  return value === null || typeof value === "number";
+}
+
+// NaN and Infinity both serialise as "null", which is the one thing an
+// operator reading the warning must not be told.
+function showCursor(value: unknown): string {
+  return typeof value === "number" ? String(value) : JSON.stringify(value);
+}
+
+function isCursorRef(key: string): boolean {
+  return key === CURSOR_KEY || key.endsWith(`/${CURSOR_KEY}`);
+}
+
 export function createPieceStorePort(
   store: WorkflowRunStore,
   workflowIdFor: () => string | undefined,
   sample = false,
+  clock: () => number = Date.now,
 ): PieceStorePort {
   // A step with no workflow in scope must fail rather than read or write
   // another workflow's keys.
@@ -62,8 +99,30 @@ export function createPieceStorePort(
   return {
     get: async (key, scope) =>
       store.getPieceStoreValue(scope, partition(scope), key),
-    put: async (key, value, scope) =>
-      store.setPieceStoreValue(scope, partition(scope), key, value),
+    // A durable store means the cursor no longer passes the supervisor on its
+    // way to the database, so the guard that policed it lives here instead.
+    put: async (key, value, scope) => {
+      const now = clock();
+      if (!isCursorRef(key) || isPlausibleCursor(value, now)) {
+        return store.setPieceStoreValue(scope, partition(scope), key, value);
+      }
+      const kept = await store.getPieceStoreValue(scope, partition(scope), key);
+      // Only our own cursor shape is ours to police: a piece that keeps its
+      // own `lastPoll` as a string or an object is left to it.
+      if (!isCursorShaped(value) && !isPlausibleCursor(kept, now)) {
+        return store.setPieceStoreValue(scope, partition(scope), key, value);
+      }
+      logger.warn(
+        `Rejected ${key}=${showCursor(value)} from workflow ${flowKey()}; keeping ${
+          isPlausibleCursor(kept, now) ? String(kept) : "no cursor"
+        }`,
+      );
+      // With nothing to fall back to the key is dropped, so the next poll
+      // fails loudly rather than running on a cursor nobody chose.
+      if (!isPlausibleCursor(kept, now)) {
+        await store.deletePieceStoreValue(scope, partition(scope), key);
+      }
+    },
     delete: async (key, scope) =>
       store.deletePieceStoreValue(scope, partition(scope), key),
   };

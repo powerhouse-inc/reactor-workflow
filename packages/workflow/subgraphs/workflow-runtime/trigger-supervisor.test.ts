@@ -247,6 +247,8 @@ describe.skipIf(!rssBundle)("TriggerSupervisor", () => {
         delivered.push(payload);
       },
       cacheDir,
+      // The feed is on loopback, which the default policy refuses.
+      egress: { allowAddresses: ["127.0.0.1/32", "::1/128"] },
     });
     const flakyBinding = { ...binding(), workflowId: flaky };
     await supervisor2.upsert(flakyBinding);

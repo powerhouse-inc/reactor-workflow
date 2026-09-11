@@ -85,4 +85,46 @@ describe("piece store partitions", () => {
 
     expect(await portFor(undefined).get("instance-wide", "PROJECT")).toBe(true);
   });
+
+  // The cursor guard moved here when the durable store stopped routing a
+  // trigger's writes through the supervisor. Same key, same rule.
+
+  // The last two hold either way today; they are here so a future guard
+  // cannot start policing a cursor shape that was never ours.
+  describe("the pollingHelper cursor", () => {
+    const NOW = 1_700_000_000_000;
+    const guarded = (workflowId: string) =>
+      createPieceStorePort(store, () => workflowId, false, () => NOW);
+
+    it("rejects the null a serialised NaN cursor arrives as", async () => {
+      const port = guarded("wf-nan");
+      await port.put("lastPoll", NOW - 1000, "FLOW");
+      // The worker JSON-serialises the write, so NaN reaches the host as null.
+      await port.put("lastPoll", null, "FLOW");
+
+      expect(await port.get("lastPoll", "FLOW")).toBe(NOW - 1000);
+    });
+
+    it("rejects a cursor further ahead than a provider's clock could skew", async () => {
+      const port = guarded("wf-skew");
+      await port.put("lastPoll", NOW - 1000, "FLOW");
+      await port.put("lastPoll", NOW + 8 * 24 * 60 * 60_000, "FLOW");
+
+      expect(await port.get("lastPoll", "FLOW")).toBe(NOW - 1000);
+    });
+
+    it("leaves a piece's own non-numeric lastPoll alone", async () => {
+      const port = guarded("wf-own");
+      await port.put("lastPoll", { id: "abc" }, "FLOW");
+
+      expect(await port.get("lastPoll", "FLOW")).toEqual({ id: "abc" });
+    });
+
+    it("does not police any other key", async () => {
+      const port = guarded("wf-other");
+      await port.put("lastItem", null, "FLOW");
+
+      expect(await port.get("lastItem", "FLOW")).toBeNull();
+    });
+  });
 });
