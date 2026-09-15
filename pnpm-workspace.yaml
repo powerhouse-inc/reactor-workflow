@@ -1,5 +1,9 @@
 packages:
   - "packages/*"
+  # The demo is a workspace package for one reason: its workflow graph is
+  # tested against the engine (demo-umh/test), which needs the connectors
+  # package as a dependency.
+  - "demo-umh"
 allowBuilds:
   '@apollo/protobufjs': false
   '@datadog/pprof': false

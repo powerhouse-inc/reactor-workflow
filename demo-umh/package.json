@@ -1,0 +1,16 @@
+{
+  "name": "umh-demo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The UMH demo: a simulated factory floor and a paperless archive, read by workflows instead of by processors.",
+  "scripts": {
+    "test": "vitest run",
+    "seed": "node scripts/seed.mjs",
+    "install-pieces": "node scripts/install-pieces.mjs"
+  },
+  "devDependencies": {
+    "@powerhousedao/reactor-connectors": "workspace:*",
+    "vitest": "4.1.1"
+  }
+}

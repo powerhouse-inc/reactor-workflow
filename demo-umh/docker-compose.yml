@@ -1,0 +1,106 @@
+# The UMH demo stack: a simulated factory floor and a paperless-ngx archive,
+# both read by workflows rather than by a custom processor.
+#
+#   docker compose -f demo-umh/docker-compose.yml up -d
+#   node demo-umh/scripts/seed.mjs        # connections + workflows on the reactor
+#
+#   docker compose -f demo-umh/docker-compose.yml down     # stop
+#   docker compose -f demo-umh/docker-compose.yml down -v  # stop + delete data
+#
+# What is NOT here, deliberately:
+#
+# - umh-core, TimescaleDB, pgbouncer, Grafana. The workflows read the floor's
+#   REST API, which is the same surface the reference integration's
+#   `umh-order-poller` polls. OEE history, machine stops and cost rates live in
+#   the historian and are recorded as null — see packages/piece-umh/README.md.
+# - The reactor. Vetra runs on the host from packages/workflow, so the pieces
+#   and the workflow runtime are the ones in this checkout rather than a
+#   published image.
+#
+# --- port choices -----------------------------------------------------------
+# The simulator takes 18081, not its canonical 8081: a standalone ~/umh-factory
+# deployment (or the umh-powerhouse demo) publishes 8081, and this stack must
+# not talk to someone's running factory by accident. Paperless takes 18000 for
+# the same reason.
+name: umh-demo
+
+services:
+  # The factory: machines on simulated OPC-UA/Modbus, a fake MES that dispatches
+  # orders to them, and the REST API the UMH piece reads.
+  #
+  # SIMULATOR_PROFILE is required — the image exits immediately without one.
+  # SIMULATOR_ERP_MODE=manual stops its fake ERP minting an order every 30
+  # seconds, so every order on this floor comes from a workflow, which is the
+  # point of the demo.
+  machine-simulator:
+    image: dh2k/machine-simulator-2:v1.1.0
+    restart: unless-stopped
+    ports:
+      - "18081:8081"
+    environment:
+      SIMULATOR_PROFILE: demo-mixed
+      SIMULATOR_ERP_MODE: manual
+      LOG_LEVEL: info
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  # Both paperless services run on the HOST network namespace, as demo/ does.
+  # The paperless trigger registers a webhook that posts deliveries back to the
+  # switchboard — a process on this machine. On a bridge network that address is
+  # host.docker.internal, which many hosts drop at the firewall; on the host
+  # netns both directions are plain loopback. The simulator needs no inbound
+  # path (the UMH piece polls it), so it stays on a normal bridge.
+  paperless-broker:
+    image: docker.io/library/redis:7
+    network_mode: host
+    command: ["redis-server", "--port", "16379"]
+    restart: unless-stopped
+
+  # 2.18.4, not 3.x: that is the API line packages/piece-paperless-ngx was built
+  # and verified against. Paperless 3.0 removed the API upload endpoint, which
+  # breaks the piece's upload_document action.
+  paperless:
+    image: ghcr.io/paperless-ngx/paperless-ngx:2.18.4
+    network_mode: host
+    depends_on:
+      - paperless-broker
+    restart: unless-stopped
+    environment:
+      PAPERLESS_PORT: "18000"
+      PAPERLESS_REDIS: redis://localhost:16379
+      PAPERLESS_URL: http://localhost:18000
+      PAPERLESS_TIME_ZONE: UTC
+      PAPERLESS_OCR_LANGUAGE: eng
+      PAPERLESS_ADMIN_USER: admin
+      PAPERLESS_ADMIN_PASSWORD: paperless-demo
+      PAPERLESS_ADMIN_MAIL: admin@example.com
+      # Any value works for a throwaway instance; do not reuse a real secret.
+      PAPERLESS_SECRET_KEY: demo-only-not-a-real-secret
+      # The webhook delivery target is loopback, which paperless counts as
+      # internal and refuses by default.
+      PAPERLESS_WEBHOOKS_ALLOW_INTERNAL_REQUESTS: "true"
+    volumes:
+      - umh-demo-data:/usr/src/paperless/data
+      - umh-demo-media:/usr/src/paperless/media
+      - umh-demo-consume:/usr/src/paperless/consume
+      - umh-demo-export:/usr/src/paperless/export
+      # The image feeds its s6-rc services the container env via with-contenv;
+      # if that materialization comes up empty (seen after container
+      # recreation), Django boots with defaults and token auth breaks. Mount the
+      # same values as s6-rc `environment` files so every service always has
+      # them. Same workaround as demo/.
+      - ./paperless.env:/etc/s6-overlay/s6-rc.d/svc-webserver/environment
+      - ./paperless.env:/etc/s6-overlay/s6-rc.d/svc-consumer/environment
+      - ./paperless.env:/etc/s6-overlay/s6-rc.d/svc-worker/environment
+      - ./paperless.env:/etc/s6-overlay/s6-rc.d/svc-scheduler/environment
+      - ./paperless.env:/etc/s6-overlay/s6-rc.d/svc-flower/environment
+
+volumes:
+  umh-demo-data:
+  umh-demo-media:
+  umh-demo-consume:
+  umh-demo-export:

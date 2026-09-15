@@ -132,6 +132,14 @@ function itemFor(
   return {
     ...orderActuals(order, machines, capturedAt),
     lifecycle: lifecycleOf(order.status),
+    // Whether the floor has counted anything for this order yet — the same
+    // condition that decides whether `qualityPct` is a number or null.
+    //
+    // It is a field rather than something a consumer derives because the
+    // runtime's expression language has no arithmetic: a workflow cannot ask
+    // whether good + scrap > 0, so a step that must not record an empty
+    // reading has no other way to branch on it.
+    counted: order.good_qty + order.scrap_qty > 0,
     changed,
     previous: previous ?? null,
     order,
