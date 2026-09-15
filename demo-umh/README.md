@@ -24,7 +24,7 @@ Both halves are built.
 | Paperless | `paperless-ngx:2.18.4` in Docker, port **18000** |
 | Reactor + Connect | Vetra on the host, from `packages/workflow` |
 | Ledger document model, editors, dashboard | `umh-production-ledger`, linked from a sibling checkout |
-| Floor blocks | `packages/piece-umh` — this workspace |
+| Floor blocks | the UMH piece, shipped inside the `umh-production-ledger` package |
 | Document blocks | `packages/workflow/pieces/reactor` — this workspace |
 
 Both Docker ports are deliberately not the canonical ones: a standalone
@@ -96,7 +96,7 @@ moment the package loads, and two writers on one append-only evidence trail
 produce duplicate entries. Passing it explicitly keeps this demo correct against
 either version.
 
-`install-pieces.mjs` builds `piece-umh` and `piece-paperless-ngx` into
+`install-pieces.mjs` builds `piece-paperless-ngx` into
 `packages/workflow/dist/pieces` and declares them in the manifest the piece
 registry reads there. It is build output, and `pnpm build` regenerates that
 manifest from the tracked one — **re-run the script after any build**.

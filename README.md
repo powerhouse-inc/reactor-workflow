@@ -100,14 +100,22 @@ network access; later runs work from the cache.
 
 ## First-party pieces
 
-Three pieces are developed in this repo for the reactor's piece catalog (the
+Two pieces are developed in this repo for the reactor's piece catalog (the
 same mechanism the cloud-sourced pieces use):
 
 | Piece | Package | Target service |
 | --- | --- | --- |
 | Paperless-ngx | [`packages/piece-paperless-ngx`](packages/piece-paperless-ngx/README.md) | paperless-ngx 2.18.x (self-hosted) |
 | Docling | [`packages/piece-docling`](packages/piece-docling/README.md) | docling-serve v1.32.0 (self-hosted or watsonx) |
-| UMH Factory Floor | [`packages/piece-umh`](packages/piece-umh/README.md) | a United Manufacturing Hub floor API (`machine-simulator-2` v1.1.0) |
+
+A third, the **UMH Factory Floor** piece, now ships inside the
+[umh-production-ledger](https://github.com/powerhouse-bai/umh-production-ledger)
+package rather than living here: a reactor package can declare its own pieces,
+so the package that models a factory floor also carries the integration that
+reads it. `packages/workflow/subgraphs/workflow-runtime/packaged-piece.test.ts`
+is the conformance gate for what that package ships — it loads the bundle
+through the reactor's own loader and runs it in the forked worker, and skips
+when the package is not installed.
 
 Each package is a standalone Activepieces piece (its own npm tarball,
 its own unit/e2e suites — `pnpm -F <package> test`), and each carries a

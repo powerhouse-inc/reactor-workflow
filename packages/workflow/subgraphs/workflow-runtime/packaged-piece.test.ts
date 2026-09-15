@@ -1,24 +1,43 @@
-// Tier-1 conformance: the acceptance gate for the bundle. The published
-// artifact has to load through the reactor's own duck-typed loader, describe
-// into a connector descriptor, and execute inside the forked worker — that, not
-// our esbuild config, is the definition of a valid bundle.
+// Tier-1 conformance for a piece that arrives inside an installed reactor
+// package: the bundle has to load through the reactor's own duck-typed loader,
+// describe into a connector descriptor, and execute inside the forked worker.
+// That, not the producing package's esbuild config, is the definition of a
+// valid bundle.
+//
+// The UMH piece is built and published by umh-production-ledger. The gate
+// cannot live there — it needs @powerhousedao/reactor-connectors, which is not
+// published — so it lives here and reads what that package actually shipped.
+// Nothing in this repo produces the artifact under test.
 import { cp, mkdtemp, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type * as ReactorConnectors from "@powerhousedao/reactor-connectors";
 import { machine, order, startMockUmh, type MockUmh } from "./mock-umh";
 
-const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-// `dist/` is the tarball root, so the gate loads exactly what npm would ship —
-// the emitted package.json included, rather than one written here to suit.
-const distDir = join(packageRoot, "dist");
-const bundleFile = join(distDir, "src", "index.js");
+const require = createRequire(import.meta.url);
 
-// The reactor's loader and worker live in the connectors package; a workspace
-// that has not built it yet skips rather than fails.
+// The bundle directory the package declares in its own pieces manifest. Read
+// from the installed package rather than hard-coded, so a rename there fails
+// here as a missing bundle instead of passing against a stale path.
+function packagedBundleDir(): string | undefined {
+  try {
+    const root = dirname(require.resolve("umh-production-ledger/package.json"));
+    return join(root, "dist", "pieces", "umh");
+  } catch {
+    return undefined;
+  }
+}
+
+const distDir = packagedBundleDir();
+const bundleFile = distDir ? join(distDir, "src", "index.js") : "";
+
+// Three ways this legitimately does not run: the connectors package is not
+// built, the ledger package is not installed, or the installed version predates
+// the piece moving into it. A release that ships the piece turns the gate on
+// by itself.
 type Connectors = typeof ReactorConnectors;
 let connectors: Connectors | undefined;
 try {
@@ -27,7 +46,8 @@ try {
   connectors = undefined;
 }
 
-const ready = connectors !== undefined && existsSync(bundleFile);
+const ready =
+  connectors !== undefined && bundleFile !== "" && existsSync(bundleFile);
 
 let cacheDir = "";
 let bundleDir = "";
@@ -44,10 +64,10 @@ function authFor(baseUrl: string) {
   return { type: "CUSTOM_AUTH", props: { base_url: baseUrl } };
 }
 
-describe.skipIf(!ready)("bundle conformance", () => {
+describe.skipIf(!ready)("the UMH piece, as umh-production-ledger ships it", () => {
   beforeAll(async () => {
     published = JSON.parse(
-      await readFile(join(distDir, "package.json"), "utf8"),
+      await readFile(join(distDir!, "package.json"), "utf8"),
     ) as typeof published;
     cacheDir = await mkdtemp(join(tmpdir(), "umh-conformance-"));
     // The layout ensurePieceBundle resolves: <cacheDir>/<name>-<version>.
@@ -55,7 +75,7 @@ describe.skipIf(!ready)("bundle conformance", () => {
       cacheDir,
       `${published.name.replace("/", "-")}-${published.version}`,
     );
-    await cp(distDir, bundleDir, { recursive: true });
+    await cp(distDir!, bundleDir, { recursive: true });
     mock = await startMockUmh({
       orders: [order({ id: "order-1", good_qty: 90, scrap_qty: 10 })],
       machines: [
@@ -115,7 +135,7 @@ describe.skipIf(!ready)("bundle conformance", () => {
     expect(part?.hasDynamicResolver).toBe(true);
   });
 
-  it("ships a publishable tarball with nothing left to install", () => {
+  it("ships a bundle with nothing left to install", () => {
     expect(published.name).toBe("@powerhousedao/piece-umh");
     expect(published.main).toBe("./src/index.js");
     // Nothing may be left to install: the loader unpacks the tarball alone.

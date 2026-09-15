@@ -12,7 +12,8 @@
 # - umh-core, TimescaleDB, pgbouncer, Grafana. The workflows read the floor's
 #   REST API, which is the same surface the reference integration's
 #   `umh-order-poller` polls. OEE history, machine stops and cost rates live in
-#   the historian and are recorded as null — see packages/piece-umh/README.md.
+#   the historian and are recorded as null — see the UMH piece's README in
+#   the umh-production-ledger package.
 # - The reactor. Vetra runs on the host from packages/workflow, so the pieces
 #   and the workflow runtime are the ones in this checkout rather than a
 #   published image.

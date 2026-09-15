@@ -6,7 +6,7 @@
 // The reactor serves a piece from one of two places: a bundle fetched from a
 // registry, or a "package piece" — one an installed reactor package declares in
 // its `pieces` export and ships already built (subgraphs/workflow-runtime/
-// piece-registry.ts). Neither piece-umh nor piece-paperless-ngx is published,
+// piece-registry.ts). piece-paperless-ngx is not published,
 // so the demo uses the second: each is built into packages/workflow/dist/pieces
 // and declared in the manifest the registry reads there.
 //
@@ -33,10 +33,14 @@ const workflowRoot = path.join(repoRoot, "packages", "workflow");
 const piecesDir = path.join(workflowRoot, "dist", "pieces");
 const manifestFile = path.join(piecesDir, "index.mjs");
 
-// Every piece the demo's workflows use, by workspace directory. The bundle
-// directory name is ours; the piece name comes from each package's own
-// manifest, so the two cannot drift.
-const PIECES = ["piece-umh", "piece-paperless-ngx"];
+// Every UNPUBLISHED piece the demo's workflows use, by workspace directory.
+// The bundle directory name is ours; the piece name comes from each package's
+// own manifest, so the two cannot drift.
+//
+// The UMH piece is not here any more: umh-production-ledger ships it in its
+// own pieces manifest, so the reactor finds it the moment that package is
+// installed — no injection, and nothing for a rebuild to undo.
+const PIECES = ["piece-paperless-ngx"];
 
 if (!existsSync(manifestFile)) {
   // Without it the reactor piece — the document blocks every workflow here
