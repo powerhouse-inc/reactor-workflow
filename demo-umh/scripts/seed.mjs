@@ -10,6 +10,9 @@
 // Environment (defaults suit demo-umh/docker-compose.yml + `ph vetra`):
 //   REACTOR_URL   http://localhost:4001
 //   UMH_API_URL   http://localhost:18081   the floor, as the REACTOR sees it
+import { readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   DISPATCH_BLOCK,
   FIND_BLOCK,
@@ -40,6 +43,15 @@ const WORKFLOW_DRIVE = {
   editor: "workflow-studio",
 };
 
+const LEDGER_PACKAGE = "umh-production-ledger";
+const CONNECT_CONFIG = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+  "packages",
+  "workflow",
+  "powerhouse.config.json",
+);
 const CONNECTION_NAME = "UMH Factory Floor";
 const WORKFLOW_NAME = "Floor evidence -> ledger";
 
@@ -107,7 +119,7 @@ async function childrenOf(driveId) {
 async function findDrive(name) {
   const data = await gql(
     `query { findDocuments(search:{type:"powerhouse/document-drive"}, paging:{limit:100}) {
-       items { id name } } }`,
+       items { id name slug } } }`,
   );
   return data.findDocuments.items.find((item) => item.name === name);
 }
@@ -116,7 +128,10 @@ async function ensureDrive(drive) {
   const existing = await findDrive(drive.name);
   if (existing) {
     log(`drive "${drive.name}" already exists (${existing.id})`);
-    return existing.id;
+    // Its own slug, not the one this script would have given it: a drive
+    // created by hand in Connect has its id there, and that is what a default
+    // drive URL has to address.
+    return { id: existing.id, slug: existing.slug };
   }
   const created = await gql(
     `mutation($name:String!,$slug:String,$editor:String) {
@@ -125,7 +140,58 @@ async function ensureDrive(drive) {
   );
   const id = created.DocumentDrive.createDocument.id;
   log(`created drive "${drive.name}" (${id})`);
-  return id;
+  return { id, slug: drive.slug };
+}
+
+
+// Connect is the other half, and it is told none of this by the reactor: the
+// browser fetches powerhouse.config.json over HTTP and reads its own `packages`
+// and `defaultDrives` from there. Without the package entry the ledger
+// documents render as an unknown type with no editor, however well the
+// switchboard has loaded the same models.
+//
+// This edits a file that is tracked in git. It is the project's dev config, not
+// something the workflow package publishes, and the edit is the demo's: revert
+// it when you are done, or keep it if this checkout is the demo.
+function configureConnect(drives) {
+  const config = JSON.parse(readFileSync(CONNECT_CONFIG, "utf8"));
+  const changes = [];
+
+  config.packages ??= [];
+  if (!config.packages.some((entry) => entry.packageName === LEDGER_PACKAGE)) {
+    // No version and no provider: Connect resolves it against
+    // packageRegistryUrl, which already points at the registry the ledger is
+    // published to.
+    config.packages.push({ packageName: LEDGER_PACKAGE });
+    changes.push(`packages += ${LEDGER_PACKAGE}`);
+  }
+
+  config.connect ??= {};
+  config.connect.drives ??= {};
+  config.connect.drives.defaultDrives ??= [];
+  const defaults = config.connect.drives.defaultDrives;
+  for (const drive of drives) {
+    const url = `${REACTOR_URL}/d/${drive.slug}`;
+    if (!defaults.some((entry) => entry.url === url)) {
+      defaults.push({ url, name: null, icon: null });
+      changes.push(`defaultDrives += ${url}`);
+    }
+  }
+
+  if (changes.length === 0) {
+    log("Connect config already carries the package and both drives");
+    return;
+  }
+  writeFileSync(CONNECT_CONFIG, `${JSON.stringify(config, null, 2)}\n`);
+  for (const change of changes) log(`connect config: ${change}`);
+  // Only half of that takes effect under Vetra. `ph vetra` builds its own
+  // drives override — its Vetra and preview drives, with preserveStrategy
+  // "preserve-all" — and hands that to Connect Studio, so `defaultDrives` from
+  // this file never reaches the browser. It is written anyway because it is
+  // what `ph connect` and a Docker deployment read; under Vetra, opening each
+  // drive once per browser is what puts it in the sidebar, and preserve-all is
+  // what keeps it there.
+  log("Reload Connect for the package; open the drive links below once each.");
 }
 
 async function ensureConnection(driveId) {
@@ -212,18 +278,25 @@ async function ensureWorkflow(driveId, connectionId) {
 
 await waitForReactor();
 await checkFloor();
-const ledgerDriveId = await ensureDrive(LEDGER_DRIVE);
-const workflowDriveId = await ensureDrive(WORKFLOW_DRIVE);
-const connectionId = await ensureConnection(workflowDriveId);
-const workflowId = await ensureWorkflow(workflowDriveId, connectionId);
+const ledgerDrive = await ensureDrive(LEDGER_DRIVE);
+const workflowDrive = await ensureDrive(WORKFLOW_DRIVE);
+const connectionId = await ensureConnection(workflowDrive.id);
+const workflowId = await ensureWorkflow(workflowDrive.id, connectionId);
+configureConnect([workflowDrive, ledgerDrive]);
 
 log(`
 Seeded.
 
-  ledger drive    ${ledgerDriveId}   (${LEDGER_DRIVE.name})
-  workflow drive  ${workflowDriveId}   (${WORKFLOW_DRIVE.name})
+  ledger drive    ${ledgerDrive.id}   (${LEDGER_DRIVE.name})
+  workflow drive  ${workflowDrive.id}   (${WORKFLOW_DRIVE.name})
   connection      ${connectionId}
   workflow        ${workflowId}
+
+Open each drive once in Connect — "ph vetra" overrides the configured default
+drives with its own, and a drive you have visited is kept by preserve-all:
+
+  ${WORKFLOW_DRIVE.name}: http://localhost:3001/?driveUrl=${encodeURIComponent(`${REACTOR_URL}/d/${workflowDrive.slug}`)}
+  ${LEDGER_DRIVE.name}: http://localhost:3001/?driveUrl=${encodeURIComponent(`${REACTOR_URL}/d/${ledgerDrive.slug}`)}
 
 Next:
   1. Open Connect and create a Production Ledger in the "${LEDGER_DRIVE.name}" drive.
