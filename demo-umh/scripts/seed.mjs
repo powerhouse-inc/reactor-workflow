@@ -22,12 +22,23 @@ import {
 const REACTOR_URL = (process.env.REACTOR_URL ?? "http://localhost:4001").replace(/\/+$/, "");
 const UMH_API_URL = (process.env.UMH_API_URL ?? "http://localhost:18081").replace(/\/+$/, "");
 
-const DRIVE_NAME = "PL Dashboard";
-const DRIVE_SLUG = "pl-dashboard";
+// Two drives, because they are read by different people. Ledgers live in the
+// dashboard the ledger package ships; the workflow and the connection that
+// drives them live with the other workflows, where Workflow Studio shows them.
+//
 // A drive's preferredEditor must target powerhouse/document-drive — that is the
-// dashboard APP. Individual ledgers open in the ledger editor on their own,
-// because its documentTypes match.
-const DRIVE_EDITOR = "production-ledger-dashboard";
+// APP. The documents inside open in their own editors, because their
+// documentTypes match.
+const LEDGER_DRIVE = {
+  name: "PL Dashboard",
+  slug: "pl-dashboard",
+  editor: "production-ledger-dashboard",
+};
+const WORKFLOW_DRIVE = {
+  name: "Workflows",
+  slug: "workflows",
+  editor: "workflow-studio",
+};
 
 const CONNECTION_NAME = "UMH Factory Floor";
 const WORKFLOW_NAME = "Floor evidence -> ledger";
@@ -90,20 +101,30 @@ async function childrenOf(driveId) {
   return data.documentOutgoingRelationships.items;
 }
 
-async function ensureDrive() {
-  const data = await gql("{ drives { id slug name } }").catch(() => null);
-  const existing = data?.drives?.find((drive) => drive.slug === DRIVE_SLUG);
+// By name, because that is what a person reading Connect sees, and because a
+// drive created by hand has its id for a slug. Matching on slug alone would
+// have missed the Workflows drive somebody already had open.
+async function findDrive(name) {
+  const data = await gql(
+    `query { findDocuments(search:{type:"powerhouse/document-drive"}, paging:{limit:100}) {
+       items { id name } } }`,
+  );
+  return data.findDocuments.items.find((item) => item.name === name);
+}
+
+async function ensureDrive(drive) {
+  const existing = await findDrive(drive.name);
   if (existing) {
-    log(`drive "${existing.name}" already exists (${existing.id})`);
+    log(`drive "${drive.name}" already exists (${existing.id})`);
     return existing.id;
   }
   const created = await gql(
     `mutation($name:String!,$slug:String,$editor:String) {
        DocumentDrive { createDocument(name:$name, slug:$slug, preferredEditor:$editor) { id } } }`,
-    { name: DRIVE_NAME, slug: DRIVE_SLUG, editor: DRIVE_EDITOR },
+    { name: drive.name, slug: drive.slug, editor: drive.editor },
   );
   const id = created.DocumentDrive.createDocument.id;
-  log(`created drive "${DRIVE_NAME}" (${id})`);
+  log(`created drive "${drive.name}" (${id})`);
   return id;
 }
 
@@ -191,19 +212,21 @@ async function ensureWorkflow(driveId, connectionId) {
 
 await waitForReactor();
 await checkFloor();
-const driveId = await ensureDrive();
-const connectionId = await ensureConnection(driveId);
-const workflowId = await ensureWorkflow(driveId, connectionId);
+const ledgerDriveId = await ensureDrive(LEDGER_DRIVE);
+const workflowDriveId = await ensureDrive(WORKFLOW_DRIVE);
+const connectionId = await ensureConnection(workflowDriveId);
+const workflowId = await ensureWorkflow(workflowDriveId, connectionId);
 
 log(`
 Seeded.
 
-  drive       ${driveId}
-  connection  ${connectionId}
-  workflow    ${workflowId}
+  ledger drive    ${ledgerDriveId}   (${LEDGER_DRIVE.name})
+  workflow drive  ${workflowDriveId}   (${WORKFLOW_DRIVE.name})
+  connection      ${connectionId}
+  workflow        ${workflowId}
 
 Next:
-  1. Open Connect and create a Production Ledger in the "${DRIVE_NAME}" drive.
+  1. Open Connect and create a Production Ledger in the "${LEDGER_DRIVE.name}" drive.
   2. Set its commitment, then set its Order ID to an order on the floor — or
      have a workflow create the order and bind it.
   3. Open the ledger (status OPEN) so evidence is judged against a frozen
