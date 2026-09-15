@@ -89,10 +89,12 @@ that reaches the host is `host.docker.internal`.
 
 **`UMH_POLLER_ENABLED=false`.**
 
-The ledger package registers
-`umh-order-poller` the moment it loads, and two writers on one append-only
-evidence trail produce duplicate entries. The switch is a guard in the ledger
-package's own factory; without it, the processor and this workflow both write.
+Belt and braces since
+[umh-production-ledger#1](https://github.com/powerhouse-bai/umh-production-ledger/pull/1)
+made the poller opt-in: on a package built before that, the processor starts the
+moment the package loads, and two writers on one append-only evidence trail
+produce duplicate entries. Passing it explicitly keeps this demo correct against
+either version.
 
 `install-pieces.mjs` builds `piece-umh` and `piece-paperless-ngx` into
 `packages/workflow/dist/pieces` and declares them in the manifest the piece
