@@ -61,7 +61,11 @@ PH_REGISTRY_PACKAGES=umh-production-ledger \
 UMH_POLLER_ENABLED=false \
 WORKFLOW_EGRESS_ALLOW_ADDRESSES=127.0.0.1/32,::1/128 \
 PH_PUBLIC_URL=http://localhost:4001 \
-  pnpm vetra --strictPort
+  pnpm vetra --strictPort \
+    --default-drives-url "http://localhost:4001/d/pl-dashboard,http://localhost:4001/d/workflows"
+
+# the seed prints the exact --default-drives-url for your drives; a drive made
+# by hand in Connect carries its id rather than a slug
 
 # 4. the drive, the connection and the workflow
 node demo-umh/scripts/seed.mjs
@@ -154,13 +158,15 @@ Two consequences worth knowing:
   fetches `…/-/cdn/umh-production-ledger/browser/index.js` at whatever version
   the registry has, while the reactor runs the linked local clone. Change the
   model locally and Connect will not see it until you publish.
-- **Default drives cannot be configured under Vetra.** `ph vetra` builds its own
-  drives override — its Vetra and preview drives, with
-  `preserveStrategy: "preserve-all"` — and hands that to Connect Studio, so
-  `connect.drives.defaultDrives` never reaches the browser. The seed writes it
-  anyway, because `ph connect` and a Docker deployment do read it, and prints a
-  link per drive: open each once and preserve-all keeps it in the sidebar for
-  that browser.
+- **Default drives come from the command line, not the config file.** `ph vetra`
+  builds its own drives override and hands it to Connect Studio, so
+  `connect.drives.defaultDrives` never reaches the browser — but
+  `--default-drives-url` does, and the run command above uses it. The seed still
+  writes the config entry, because `ph connect` and a Docker deployment read it,
+  and prints a `?driveUrl=` link per drive for a browser that needs one:
+  `preserveStrategy: "preserve-all"` keeps a drive you have visited. Reported
+  upstream as [powerhouse-inc/powerhouse#3023](https://github.com/powerhouse-inc/powerhouse/issues/3023);
+  note the flag *replaces* Vetra's own drives rather than adding to them.
 
 The ledger editor also talks to the floor API **directly from the browser**, and
 it defaults to `http://localhost:8081`. This demo's floor is on 18081, so the
