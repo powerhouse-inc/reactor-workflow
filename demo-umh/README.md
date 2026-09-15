@@ -14,7 +14,7 @@ inside the ledger package:
 from blocks anyone can read and edit in Connect, rather than from code that has
 to be written, reviewed and deployed.
 
-Status: the floor half is built. The paperless half is next.
+Both halves are built.
 
 ## What runs where
 
@@ -48,37 +48,48 @@ repositories sit side by side under one parent directory.
 ## Run it
 
 ```sh
-# 1. build the workspace, then make its unpublished pieces visible to the reactor
-pnpm build
-node demo-umh/scripts/install-pieces.mjs
-
-# 2. the floor and the archive
+# 1. the floor and the archive
 docker compose -f demo-umh/docker-compose.yml up -d
 
-# 3. the reactor, with the ledger package loaded and its poller switched off
-cd packages/workflow
-PH_REGISTRY_PACKAGES=umh-production-ledger \
-UMH_POLLER_ENABLED=false \
-WORKFLOW_EGRESS_ALLOW_ADDRESSES=127.0.0.1/32,::1/128 \
-PH_PUBLIC_URL=http://localhost:4001 \
-  pnpm vetra --strictPort \
-    --default-drives-url "http://localhost:4001/d/pl-dashboard,http://localhost:4001/d/workflows"
+# 2. the reactor (installs this workspace's unpublished pieces, then Vetra)
+./demo-umh/start.sh
 
-# the seed prints the exact --default-drives-url for your drives; a drive made
-# by hand in Connect carries its id rather than a slug
-
-# 4. the drive, the connection and the workflow
+# 3. the drives, connections and workflows
 node demo-umh/scripts/seed.mjs
 ```
 
-**`WORKFLOW_EGRESS_ALLOW_ADDRESSES` is not optional either.** Piece code runs
-under an egress policy that denies private address space — a piece config is an
-SSRF surface — so without it every connection in this demo is unreachable and
-the trigger parks with `Could not reach the UMH floor API`. Naming the two
-loopback addresses widens the policy by exactly that much; the rest of private
-space, and the cloud metadata endpoint, stay denied.
+For the extraction step, put an OpenRouter key in `demo-umh/.env` (copy
+`.env.example`) and run the seed again — it mints the key into the reactor's
+secret store and rotates it on later runs, so only the ref ever touches the
+connection document. Without it every other part of the demo works and the
+extraction step fails with a 401.
 
-**`UMH_POLLER_ENABLED=false` is not optional.** The ledger package registers
+`start.sh` exists because the piece installation has to happen on **every**
+start. It writes `packages/workflow/dist/pieces/index.mjs`, and both `pnpm
+build` and the workflow package's own test suite regenerate that file from the
+tracked manifest — dropping the demo's pieces. When that happens the reactor
+loads one package piece instead of three, every block type in both workflows
+resolves to nothing, and no trigger registers: a silent and total stop.
+
+`start.sh` sets three things that are each load-bearing:
+
+**`WORKFLOW_EGRESS_ALLOW_ADDRESSES`.** Piece code runs under an egress policy
+that denies private address space — a piece config is an SSRF surface — so
+without it every connection in this demo is unreachable and the trigger parks
+with `Could not reach the UMH floor API`. Naming the loopback addresses widens
+the policy by exactly that much; the rest of private space, and the cloud
+metadata endpoint, stay denied.
+
+**`PUBLIC_URL`** — not `PH_PUBLIC_URL`, which nothing reads.
+`resolvePublicOrigin` in reactor-api reads `PUBLIC_URL` (or
+`RENDER_EXTERNAL_URL`) and otherwise falls back to localhost. It is the origin
+the paperless piece registers as its webhook target, and paperless posts from
+inside a container, where `localhost` is itself. On Docker Desktop the address
+that reaches the host is `host.docker.internal`.
+
+**`UMH_POLLER_ENABLED=false`.**
+
+The ledger package registers
 `umh-order-poller` the moment it loads, and two writers on one append-only
 evidence trail produce duplicate entries. The switch is a guard in the ledger
 package's own factory; without it, the processor and this workflow both write.
@@ -117,6 +128,39 @@ payload captured from a live floor.
 The snapshot id is derived — `<orderId>-<capturedAt>` — so a replayed delivery
 produces the same id and the reducer rejects it, rather than appending the same
 reading twice.
+
+## The purchase-order workflow
+
+```
+new document ──▶ purchase order? ──true──▶ read the model ──▶ extract
+                                             ──▶ draft ──▶ commitment ──▶ fetch scan ──▶ attach
+```
+
+This is the `paperless-sync` processor — an LLM client, an import store, a
+safe-merge, a paperless client and a docling client — as seven blocks, three of
+them the reactor's own. `demo-umh/scripts/graph.mjs` is the definition and
+`demo-umh/test/purchase-order-graph.test.mjs` runs it against the engine.
+
+- **The trigger self-registers.** Enabling the workflow creates a webhook in
+  paperless pointing at this reactor; `include_content` is what puts the OCR
+  text in the payload.
+- **The guard is a branch, not the trigger's filter.** The piece sends
+  paperless 3.x's `filter_has_any_document_types`, and this demo pins 2.18.4,
+  whose field is the singular `filter_has_document_type`. Paperless accepts the
+  unknown field and ignores it, so the delivery is not filtered at the source
+  and the branch on `document_type` is what actually decides.
+- **The model reads its own schema at run time.** The `model` step hands the
+  extractor the ledger's state schema and all eleven operations, so the prompt
+  cannot drift from the document model the way a hardcoded field list would.
+- **The commitment is dispatched, not created.** `document-create` will apply
+  actions from a payload, but only `document-dispatch` enforces an allow-list.
+  Creating the draft empty and dispatching into it is what makes "SET_COMMITMENT
+  and nothing else" a rule rather than a request — which matters when the
+  actions were written by a model. The scan is attached the same way, with
+  `SET_SOURCE_DOCUMENT` and nothing else.
+- **The human gate holds.** Nothing in this workflow approves, opens, starts or
+  signs a ledger. A reviewer does that, and approval is what creates the floor
+  order the other workflow then feeds.
 
 ### Two known gaps
 
@@ -190,6 +234,11 @@ curl -s http://localhost:4001/graphql/workflow-runtime \
 
 A run whose `counted?` or `OPEN?` step ends the graph is a **successful** run
 that decided to write nothing — that is the guard working, not a failure.
+
+**Paperless de-duplicates against its trash.** Re-uploading the same PDF after
+deleting the document is refused with "It is a duplicate … existing document is
+in the trash", and no webhook fires. Empty the trash, or use one of the other
+sample purchase orders.
 
 **If the trigger parks, republish it.** A trigger whose first enable failed —
 the floor was not up yet, the egress policy was not widened — backs off, and a

@@ -10,7 +10,8 @@
 // Environment (defaults suit demo-umh/docker-compose.yml + `ph vetra`):
 //   REACTOR_URL   http://localhost:4001
 //   UMH_API_URL   http://localhost:18081   the floor, as the REACTOR sees it
-import { readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -18,9 +19,34 @@ import {
   FIND_BLOCK,
   floorWorkflowGraph,
   LEDGER_TYPE,
+  OPENROUTER_PIECE,
+  PAPERLESS_PIECE,
+  purchaseOrderWorkflowGraph,
   TRIGGER_BLOCK,
   UMH_PIECE,
 } from "./graph.mjs";
+
+const demoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+// demo-umh/.env, read before anything below looks at process.env. Same place
+// the umh-powerhouse demo keeps its keys, and the same reason: a credential
+// belongs in a file you do not commit, not in a shell history. A variable
+// already set in the environment wins, so `PAPERLESS_AI_API_KEY=… node seed.mjs`
+// still works.
+function loadEnvFile() {
+  const file = path.join(demoRoot, ".env");
+  if (!existsSync(file)) return;
+  for (const line of readFileSync(file, "utf8").split("\n")) {
+    const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
+    if (!match || line.trimStart().startsWith("#")) continue;
+    const value = match[2].trim().replace(/^(['"])(.*)\1$/, "$2");
+    if (value !== "" && process.env[match[1]] === undefined) {
+      process.env[match[1]] = value;
+    }
+  }
+}
+
+loadEnvFile();
 
 const REACTOR_URL = (process.env.REACTOR_URL ?? "http://localhost:4001").replace(/\/+$/, "");
 const UMH_API_URL = (process.env.UMH_API_URL ?? "http://localhost:18081").replace(/\/+$/, "");
@@ -45,8 +71,7 @@ const WORKFLOW_DRIVE = {
 
 const LEDGER_PACKAGE = "umh-production-ledger";
 const CONNECT_CONFIG = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "..",
+  demoRoot,
   "..",
   "packages",
   "workflow",
@@ -54,6 +79,23 @@ const CONNECT_CONFIG = path.resolve(
 );
 const CONNECTION_NAME = "UMH Factory Floor";
 const WORKFLOW_NAME = "Floor evidence -> ledger";
+
+const PAPERLESS_URL = (process.env.PAPERLESS_URL ?? "http://localhost:18000").replace(/\/+$/, "");
+const PAPERLESS_USER = process.env.PAPERLESS_USER ?? "admin";
+const PAPERLESS_PASSWORD = process.env.PAPERLESS_PASSWORD ?? "paperless-demo";
+const PAPERLESS_CONNECTION_NAME = "Paperless-ngx";
+const PAPERLESS_DOCTYPE = "Purchase Order";
+const AI_CONNECTION_NAME = "OpenRouter";
+// The model the umh-powerhouse demo extracts with; any OpenRouter model id works.
+const AI_MODEL = process.env.PAPERLESS_AI_MODEL ?? "openai/gpt-oss-120b";
+// Optional: without it the connection is created empty and the key is pasted
+// into Connect instead, which is the normal way to hand a reactor a credential.
+// PAPERLESS_AI_API_KEY is the name the umh-powerhouse demo uses; OPENROUTER_API_KEY
+// is accepted because that is what the key is.
+const AI_API_KEY =
+  process.env.PAPERLESS_AI_API_KEY ?? process.env.OPENROUTER_API_KEY ?? "";
+const AI_SECRET_NAME = "api_key";
+const PO_WORKFLOW_NAME = "Purchase order -> draft ledger";
 
 const log = (message) => console.log(message);
 
@@ -70,11 +112,25 @@ async function gql(query, variables = {}) {
   return body.data;
 }
 
-async function waitForReactor(seconds = 120) {
+// "Up" means the document models this script writes through are registered,
+// not merely that something answers. The supergraph serves `__typename` while
+// it is still composing, and a mutation sent in that window comes back as a
+// bare 404 — which is how this first failed.
+async function waitForReactor(seconds = 180) {
   const deadline = Date.now() + seconds * 1000;
+  const NEEDED = ["Connection", "Workflow", "DocumentDrive"];
   for (;;) {
     try {
-      await gql("{ __typename }");
+      const data = await gql(
+        "{ __schema { mutationType { fields { name } } } }",
+      );
+      const fields = new Set(
+        data.__schema.mutationType.fields.map((field) => field.name),
+      );
+      const missing = NEEDED.filter((name) => !fields.has(name));
+      if (missing.length > 0) {
+        throw new Error(`supergraph is still composing (no ${missing.join(", ")})`);
+      }
       log(`reactor is up at ${REACTOR_URL}`);
       return;
     } catch (error) {
@@ -193,6 +249,216 @@ function configureConnect(drives) {
   log("Reload Connect for the package; open the drive links below once each.");
 }
 
+
+// ---- paperless -------------------------------------------------------------
+
+async function paperless(path, init = {}, token) {
+  const response = await fetch(`${PAPERLESS_URL}${path}`, {
+    ...init,
+    headers: {
+      "content-type": "application/json",
+      ...(token ? { Authorization: `Token ${token}` } : {}),
+      ...init.headers,
+    },
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!response.ok) {
+    throw new Error(`paperless ${init.method ?? "GET"} ${path} -> ${response.status}`);
+  }
+  return response.status === 204 ? undefined : response.json();
+}
+
+// Minted rather than configured: the demo's paperless has a known admin login
+// and no token until something asks for one.
+async function paperlessToken(seconds = 300) {
+  const deadline = Date.now() + seconds * 1000;
+  for (;;) {
+    try {
+      const body = await paperless("/api/token/", {
+        method: "POST",
+        body: JSON.stringify({ username: PAPERLESS_USER, password: PAPERLESS_PASSWORD }),
+      });
+      log(`paperless is up at ${PAPERLESS_URL}`);
+      return body.token;
+    } catch (error) {
+      // A login paperless actively rejects will never start working; only a
+      // stack still converging is worth waiting for.
+      if (/-> 40[013]$/.test(error.message)) {
+        throw new Error(
+          `${error.message} — check PAPERLESS_ADMIN_USER / PAPERLESS_ADMIN_PASSWORD in demo-umh/docker-compose.yml`,
+        );
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(`No paperless at ${PAPERLESS_URL} after ${seconds}s (${error.message})`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
+  }
+}
+
+// The type the trigger filters on. Paperless assigns it by matching the word
+// "order" anywhere in the document (matching_algorithm 1 = any word), so a
+// dropped purchase order is classified before the webhook fires.
+async function ensureDocumentType(token) {
+  const existing = await paperless(
+    `/api/document_types/?name__iexact=${encodeURIComponent(PAPERLESS_DOCTYPE)}`,
+    {},
+    token,
+  );
+  if (existing.results?.length) {
+    log(`paperless document type "${PAPERLESS_DOCTYPE}" already exists (${existing.results[0].id})`);
+    return existing.results[0].id;
+  }
+  const created = await paperless(
+    "/api/document_types/",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        name: PAPERLESS_DOCTYPE,
+        matching_algorithm: 1,
+        match: "order",
+        is_insensitive: true,
+      }),
+    },
+    token,
+  );
+  log(`created paperless document type "${PAPERLESS_DOCTYPE}" (${created.id})`);
+  return created.id;
+}
+
+// ---- connections -----------------------------------------------------------
+
+// The value never comes back out: createSecret stores it encrypted and returns
+// a ref, and the connection document holds only the ref.
+async function mintSecret(value, label) {
+  const data = await gql(
+    `mutation($value:String!,$label:String) {
+       workflowRuntime { createSecret(value:$value, label:$label) { ref } } }`,
+    { value, label },
+  );
+  return data.workflowRuntime.createSecret.ref;
+}
+
+async function ensurePaperlessConnection(driveId, token) {
+  const existing = (await childrenOf(driveId)).find(
+    (item) =>
+      item.documentType === "powerhouse/connection" &&
+      item.name === PAPERLESS_CONNECTION_NAME,
+  );
+  if (existing) {
+    log(`connection "${PAPERLESS_CONNECTION_NAME}" already exists (${existing.id})`);
+    return existing.id;
+  }
+  const created = await gql(
+    `mutation($name:String!,$parent:String) {
+       Connection { createDocument(name:$name, parentIdentifier:$parent) { id } } }`,
+    { name: PAPERLESS_CONNECTION_NAME, parent: driveId },
+  );
+  const id = created.Connection.createDocument.id;
+  await gql(
+    `mutation($doc:PHID!,$input:Connection_SetConnectorInput!) {
+       Connection { setConnector(docId:$doc, input:$input) { id } } }`,
+    { doc: id, input: { connectorId: PAPERLESS_PIECE, authType: "CUSTOM_AUTH" } },
+  );
+  await gql(
+    `mutation($doc:PHID!,$input:Connection_SetConfigInput!) {
+       Connection { setConfig(docId:$doc, input:$input) { id } } }`,
+    { doc: id, input: { config: { base_url: PAPERLESS_URL } } },
+  );
+  const ref = await mintSecret(token, `${PAPERLESS_CONNECTION_NAME} API token`);
+  await gql(
+    `mutation($doc:PHID!,$input:Connection_SetSecretRefInput!) {
+       Connection { setSecretRef(docId:$doc, input:$input) { id } } }`,
+    { doc: id, input: { id: randomUUID(), name: "token", ref } },
+  );
+  log(`created connection "${PAPERLESS_CONNECTION_NAME}" -> ${PAPERLESS_URL} (${id})`);
+  return id;
+}
+
+// The extractor's credential. Left empty unless an API key is in the
+// environment: a key belongs to whoever runs the demo, and Connect's connection
+// editor is where one is normally pasted.
+async function connectionState(id) {
+  const data = await gql(
+    `query($id:String!) {
+       Connection { document(identifier:$id) { document { state { global {
+         connectorId authType secretRefs { id name ref } } } } } } }`,
+    { id },
+  );
+  return data.Connection.document.document.state.global;
+}
+
+// SECRET_TEXT: one secret and nothing else, which is what the piece reads as
+// auth.secret_text. The connector is the package without its version.
+async function setAiConnector(connectionId) {
+  await gql(
+    `mutation($doc:PHID!,$input:Connection_SetConnectorInput!) {
+       Connection { setConnector(docId:$doc, input:$input) { id } } }`,
+    { doc: connectionId, input: { connectorId: OPENROUTER_PIECE, authType: "SECRET_TEXT" } },
+  );
+}
+
+// The key behind the connection, set or replaced from the environment.
+//
+// Rotating rather than re-minting when a ref already exists is what
+// `rotateSecret` is for: the value behind the ref changes and the connection
+// document is not touched, so nothing that referenced it has to be rewritten.
+async function setApiKey(connectionId, key) {
+  const state = await connectionState(connectionId);
+  const existing = state.secretRefs?.find((entry) => entry.name === AI_SECRET_NAME);
+  if (existing) {
+    await gql(
+      `mutation($ref:String!,$value:String!) {
+         workflowRuntime { rotateSecret(ref:$ref, value:$value) { ref } } }`,
+      { ref: existing.ref, value: key },
+    );
+    log(`rotated the ${AI_CONNECTION_NAME} API key from the environment`);
+    return;
+  }
+  const ref = await mintSecret(key, `${AI_CONNECTION_NAME} API key`);
+  await gql(
+    `mutation($doc:PHID!,$input:Connection_SetSecretRefInput!) {
+       Connection { setSecretRef(docId:$doc, input:$input) { id } } }`,
+    { doc: connectionId, input: { id: randomUUID(), name: AI_SECRET_NAME, ref } },
+  );
+  log(`set the ${AI_CONNECTION_NAME} API key from the environment`);
+}
+
+// The extractor's credential. The key comes from demo-umh/.env (or the
+// environment); without one the connection is created empty and the extraction
+// step has nothing to authenticate with, which the summary says out loud.
+async function ensureAiConnection(driveId) {
+  const existing = (await childrenOf(driveId)).find(
+    (item) =>
+      item.documentType === "powerhouse/connection" && item.name === AI_CONNECTION_NAME,
+  );
+  if (existing) {
+    log(`connection "${AI_CONNECTION_NAME}" already exists (${existing.id})`);
+    // Repaired, not just reused: a connection carrying the wrong connectorId
+    // is refused at run time with "Connection is not available to this block",
+    // and re-running the seed is the obvious thing to try when that happens.
+    const state = await connectionState(existing.id);
+    if (state.connectorId !== OPENROUTER_PIECE) {
+      await setAiConnector(existing.id);
+      log(`repaired its connector: ${state.connectorId} -> ${OPENROUTER_PIECE}`);
+    }
+    // Re-running with a key now set is how a demo gets one: the connection is
+    // already there, and skipping it would silently ignore the key.
+    if (AI_API_KEY) await setApiKey(existing.id, AI_API_KEY);
+    return existing.id;
+  }
+  const created = await gql(
+    `mutation($name:String!,$parent:String) {
+       Connection { createDocument(name:$name, parentIdentifier:$parent) { id } } }`,
+    { name: AI_CONNECTION_NAME, parent: driveId },
+  );
+  const id = created.Connection.createDocument.id;
+  await setAiConnector(id);
+  log(`created connection "${AI_CONNECTION_NAME}" (${id})`);
+  if (AI_API_KEY) await setApiKey(id, AI_API_KEY);
+  return id;
+}
+
 async function ensureConnection(driveId) {
   const existing = (await childrenOf(driveId)).find(
     (item) =>
@@ -224,25 +490,21 @@ async function ensureConnection(driveId) {
   return id;
 }
 
-async function ensureWorkflow(driveId, connectionId) {
+// Both workflows are published the same way; only the graph differs.
+async function publishWorkflow(driveId, name, graph) {
   const existing = (await childrenOf(driveId)).find(
-    (item) =>
-      item.documentType === "powerhouse/workflow" && item.name === WORKFLOW_NAME,
+    (item) => item.documentType === "powerhouse/workflow" && item.name === name,
   );
   if (existing) {
-    log(
-      `workflow "${WORKFLOW_NAME}" already exists (${existing.id}) — delete it to rebuild`,
-    );
+    log(`workflow "${name}" already exists (${existing.id}) — delete it to rebuild`);
     return existing.id;
   }
   const created = await gql(
     `mutation($name:String!,$parent:String) {
        Workflow { createDocument(name:$name, parentIdentifier:$parent) { id } } }`,
-    { name: WORKFLOW_NAME, parent: driveId },
+    { name, parent: driveId },
   );
   const id = created.Workflow.createDocument.id;
-  const graph = floorWorkflowGraph(connectionId);
-
   await gql(
     `mutation($doc:PHID!,$input:Workflow_SetTriggerInput!) {
        Workflow { setTrigger(docId:$doc, input:$input) { id } } }`,
@@ -263,15 +525,14 @@ async function ensureWorkflow(driveId, connectionId) {
     );
   }
   // Last, deliberately: only an ENABLED workflow registers a trigger instance,
-  // and a half-built graph that starts polling would run against missing steps.
+  // and a half-built graph that starts polling — or registers a webhook with
+  // paperless — would run against missing steps.
   await gql(
     `mutation($doc:PHID!,$input:Workflow_SetWorkflowStatusInput!) {
        Workflow { setWorkflowStatus(docId:$doc, input:$input) { id } } }`,
     { doc: id, input: { status: "ENABLED" } },
   );
-  log(
-    `created workflow "${WORKFLOW_NAME}" (${id}) — ${graph.steps.length} steps, ENABLED`,
-  );
+  log(`created workflow "${name}" (${id}) — ${graph.steps.length} steps, ENABLED`);
   return id;
 }
 
@@ -279,8 +540,33 @@ await waitForReactor();
 await checkFloor();
 const ledgerDrive = await ensureDrive(LEDGER_DRIVE);
 const workflowDrive = await ensureDrive(WORKFLOW_DRIVE);
-const connectionId = await ensureConnection(workflowDrive.id);
-const workflowId = await ensureWorkflow(workflowDrive.id, connectionId);
+
+// Track A — the floor.
+const umhConnectionId = await ensureConnection(workflowDrive.id);
+const floorWorkflowId = await publishWorkflow(
+  workflowDrive.id,
+  WORKFLOW_NAME,
+  floorWorkflowGraph(umhConnectionId),
+);
+
+// Track B — the purchase order. Paperless first, because the connection needs
+// a token it mints and the trigger filters on a type it holds.
+const token = await paperlessToken();
+const documentTypeId = await ensureDocumentType(token);
+const paperlessConnectionId = await ensurePaperlessConnection(workflowDrive.id, token);
+const aiConnectionId = await ensureAiConnection(workflowDrive.id);
+const poWorkflowId = await publishWorkflow(
+  workflowDrive.id,
+  PO_WORKFLOW_NAME,
+  purchaseOrderWorkflowGraph({
+    paperlessConnectionId,
+    aiConnectionId,
+    ledgerDriveId: ledgerDrive.id,
+    documentTypeId,
+    model: AI_MODEL,
+  }),
+);
+
 configureConnect([workflowDrive, ledgerDrive]);
 
 log(`
@@ -288,8 +574,13 @@ Seeded.
 
   ledger drive    ${ledgerDrive.id}   (${LEDGER_DRIVE.name})
   workflow drive  ${workflowDrive.id}   (${WORKFLOW_DRIVE.name})
-  connection      ${connectionId}
-  workflow        ${workflowId}
+
+  connections     ${umhConnectionId}  ${CONNECTION_NAME}
+                  ${paperlessConnectionId}  ${PAPERLESS_CONNECTION_NAME}
+                  ${aiConnectionId}  ${AI_CONNECTION_NAME}${AI_API_KEY ? "" : "  <- needs an API key"}
+
+  workflows       ${floorWorkflowId}  ${WORKFLOW_NAME}
+                  ${poWorkflowId}  ${PO_WORKFLOW_NAME}
 
 To have Connect open both drives by default, restart Vetra with:
 
@@ -302,12 +593,19 @@ and preserve-all keeps it for that browser:
   ${WORKFLOW_DRIVE.name}: http://localhost:3001/?driveUrl=${encodeURIComponent(`${REACTOR_URL}/d/${workflowDrive.slug}`)}
   ${LEDGER_DRIVE.name}: http://localhost:3001/?driveUrl=${encodeURIComponent(`${REACTOR_URL}/d/${ledgerDrive.slug}`)}
 
-Next:
-  1. Open Connect and create a Production Ledger in the "${LEDGER_DRIVE.name}" drive.
-  2. Set its commitment, then set its Order ID to an order on the floor — or
-     have a workflow create the order and bind it.
-  3. Open the ledger (status OPEN) so evidence is judged against a frozen
-     baseline; the workflow ignores ledgers in any other status.
+Next:${AI_API_KEY ? "" : `
+  0. Open the "${AI_CONNECTION_NAME}" connection in Connect and paste an
+     OpenRouter API key — or put it in demo-umh/.env as
+     PAPERLESS_AI_API_KEY and run this script again.`}
+  1. Drop a purchase-order PDF into paperless (${PAPERLESS_URL}, ${PAPERLESS_USER}
+     / ${PAPERLESS_PASSWORD}). It must contain the word "order", which is what
+     classifies it as a "${PAPERLESS_DOCTYPE}" and fires the webhook.
+  2. A DRAFT ledger appears in "${LEDGER_DRIVE.name}" with the commitment
+     extracted and the scan attached. Review it, correct what the model got
+     wrong, then Approve and Open it — that is the human gate, and the
+     workflows never cross it.
+  3. Put a floor order id in its Order ID, or approve to create one, and the
+     floor workflow starts appending evidence within a poll interval.
   4. Watch the runs:
      curl -s ${REACTOR_URL}/graphql/workflow-runtime \\
        -H 'content-type: application/json' \\
