@@ -100,13 +100,14 @@ network access; later runs work from the cache.
 
 ## First-party pieces
 
-Two pieces are developed in this repo and published to npm for the
-reactor's piece catalog (the same mechanism the cloud-sourced pieces use):
+Three pieces are developed in this repo for the reactor's piece catalog (the
+same mechanism the cloud-sourced pieces use):
 
 | Piece | Package | Target service |
 | --- | --- | --- |
 | Paperless-ngx | [`packages/piece-paperless-ngx`](packages/piece-paperless-ngx/README.md) | paperless-ngx 2.18.x (self-hosted) |
 | Docling | [`packages/piece-docling`](packages/piece-docling/README.md) | docling-serve v1.32.0 (self-hosted or watsonx) |
+| UMH Factory Floor | [`packages/piece-umh`](packages/piece-umh/README.md) | a United Manufacturing Hub floor API (`machine-simulator-2` v1.1.0) |
 
 Each package is a standalone Activepieces piece (its own npm tarball,
 its own unit/e2e suites — `pnpm -F <package> test`), and each carries a
@@ -114,9 +115,14 @@ README documenting the exact service API line it was verified against,
 including the version pins and the API oddities that shape the
 implementation.
 
-An end-to-end demo wires the two together — upload a document to
-paperless, a workflow fetches the file and converts it to Markdown with
-docling: see [`demo/README.md`](demo/README.md).
+Two end-to-end demos wire them up:
+
+- [`demo/README.md`](demo/README.md) — upload a document to paperless, and a
+  workflow fetches the file and converts it to Markdown with docling.
+- [`demo-umh/README.md`](demo-umh/README.md) — the UMH production ledger with
+  its floor-ingress processor replaced by a workflow: a simulated factory
+  floor, the published ledger package, and an evidence trail written from
+  blocks.
 
 ## Configuration
 
@@ -127,6 +133,7 @@ Environment variables read by the switchboard side:
 | `PH_SECRETS_MASTER_KEY` | 64 hex chars (32 bytes) encrypting managed secrets at rest. Without it a key file is generated for development. Set it in any shared or production deployment. |
 | `PH_SECRETS_ALLOW_WRITE` | Must be `true` to create or rotate secrets when `NODE_ENV` is not `development`. |
 | `WORKFLOW_POLL_INTERVAL_MS` | Development override for the default polling cadence of piece triggers; a 60 s floor still applies. |
+| `WORKFLOW_EGRESS_ALLOW_ADDRESSES` | Comma-separated addresses or CIDRs piece code may reach inside private address space, e.g. `127.0.0.1/32,::1/128`. Unset, every private address is denied — including the loopback services a local demo connects to. A bare address means that one host. |
 
 Connect-side flags live in `packages/workflow/powerhouse.config.json` under
 `connect`. `connect.ai.assistantEnabled` turns on the in-browser AI assistant.

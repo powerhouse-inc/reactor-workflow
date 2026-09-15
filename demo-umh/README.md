@@ -59,12 +59,20 @@ docker compose -f demo-umh/docker-compose.yml up -d
 cd packages/workflow
 PH_REGISTRY_PACKAGES=umh-production-ledger \
 UMH_POLLER_ENABLED=false \
+WORKFLOW_EGRESS_ALLOW_ADDRESSES=127.0.0.1/32,::1/128 \
 PH_PUBLIC_URL=http://localhost:4001 \
   pnpm vetra --strictPort
 
 # 4. the drive, the connection and the workflow
 node demo-umh/scripts/seed.mjs
 ```
+
+**`WORKFLOW_EGRESS_ALLOW_ADDRESSES` is not optional either.** Piece code runs
+under an egress policy that denies private address space — a piece config is an
+SSRF surface — so without it every connection in this demo is unreachable and
+the trigger parks with `Could not reach the UMH floor API`. Naming the two
+loopback addresses widens the policy by exactly that much; the rest of private
+space, and the cloud metadata endpoint, stay denied.
 
 **`UMH_POLLER_ENABLED=false` is not optional.** The ledger package registers
 `umh-order-poller` the moment it loads, and two writers on one append-only
@@ -125,6 +133,11 @@ further by editing the profile's cycle times if you want a denser one.
 
 ## Watching it work
 
+The seed puts its documents in two drives, because different people read them:
+the workflow and its connection go to **Workflows**, beside any others you have
+and under Workflow Studio; ledgers go to **PL Dashboard**, under the dashboard
+the ledger package ships.
+
 1. Open Connect (Vetra prints the URL) and the **PL Dashboard** drive.
 2. Create a Production Ledger, fill in the commitment, and **Open** it.
 3. Put a floor order id into its `orderId` — either from
@@ -141,6 +154,26 @@ curl -s http://localhost:4001/graphql/workflow-runtime \
 
 A run whose `counted?` or `OPEN?` step ends the graph is a **successful** run
 that decided to write nothing — that is the guard working, not a failure.
+
+**If the trigger parks, republish it.** A trigger whose first enable failed —
+the floor was not up yet, the egress policy was not widened — backs off, and a
+restart does not clear the backoff: the supervisor logs `Enable for workflow …
+still backing off until …` and waits. Toggling the workflow's status to
+DISABLED and back to ENABLED re-enables it immediately.
+
+What a healthy trail looks like, from a real run of this demo:
+
+| captured | good | scrap | quality % | availability % | OEE % |
+| --- | --- | --- | --- | --- | --- |
+| 09:38:41 | 7 | 0 | 100 | 100 | 100 |
+| 09:40:41 | 11 | 1 | 91.7 | 72.5 | 66.5 |
+| 09:43:41 | 24 | 1 | 96 | 72.5 | 69.6 |
+| 09:47:11 | 35 | 1 | 97.2 | 79.8 | 77.6 |
+
+Six of those nine snapshots were written by one workflow document and the last
+three by its replacement, after it was rebuilt into the Workflows drive — the
+trail does not care which, because the evidence is the ledger's, not the
+workflow's.
 
 ## Stopping
 
