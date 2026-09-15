@@ -185,12 +185,11 @@ function configureConnect(drives) {
   writeFileSync(CONNECT_CONFIG, `${JSON.stringify(config, null, 2)}\n`);
   for (const change of changes) log(`connect config: ${change}`);
   // Only half of that takes effect under Vetra. `ph vetra` builds its own
-  // drives override — its Vetra and preview drives, with preserveStrategy
-  // "preserve-all" — and hands that to Connect Studio, so `defaultDrives` from
-  // this file never reaches the browser. It is written anyway because it is
-  // what `ph connect` and a Docker deployment read; under Vetra, opening each
-  // drive once per browser is what puts it in the sidebar, and preserve-all is
-  // what keeps it there.
+  // drives override and hands it to Connect Studio, so `defaultDrives` from
+  // this file never reaches the browser (powerhouse-inc/powerhouse#3023) —
+  // `--default-drives-url` does, which is what the README's run command passes.
+  // The entry is written anyway because `ph connect` and a Docker deployment
+  // read it.
   log("Reload Connect for the package; open the drive links below once each.");
 }
 
@@ -292,8 +291,13 @@ Seeded.
   connection      ${connectionId}
   workflow        ${workflowId}
 
-Open each drive once in Connect — "ph vetra" overrides the configured default
-drives with its own, and a drive you have visited is kept by preserve-all:
+To have Connect open both drives by default, restart Vetra with:
+
+  --default-drives-url "${REACTOR_URL}/d/${ledgerDrive.slug},${REACTOR_URL}/d/${workflowDrive.slug}"
+
+The configured defaultDrives in powerhouse.config.json does not reach Connect
+under Vetra (powerhouse-inc/powerhouse#3023). Without restarting, open each once
+and preserve-all keeps it for that browser:
 
   ${WORKFLOW_DRIVE.name}: http://localhost:3001/?driveUrl=${encodeURIComponent(`${REACTOR_URL}/d/${workflowDrive.slug}`)}
   ${LEDGER_DRIVE.name}: http://localhost:3001/?driveUrl=${encodeURIComponent(`${REACTOR_URL}/d/${ledgerDrive.slug}`)}
