@@ -44,12 +44,12 @@ it. It defaults to the compose credentials (`admin` /
 From the repo root:
 
 ```sh
-PH_PUBLIC_URL=http://localhost:4001 pnpm dev
+PUBLIC_URL=http://localhost:4001 pnpm dev
 ```
 
 `pnpm dev` builds `reactor-connectors` and starts Vetra (Connect on
 :3000, switchboard on :4001 — see the root README). The
-`PH_PUBLIC_URL` flag is **required for this demo**: the paperless
+`PUBLIC_URL` flag is **required for this demo**: the paperless
 piece's webhook trigger registers a delivery endpoint with paperless
 when you enable it, and that endpoint is the switchboard's GraphQL URL
 on the reactor's public origin. The trigger refuses to enable while the
@@ -90,7 +90,7 @@ In the workflow builder, three blocks:
    - everything else at its default: markdown format, OCR on.
 
 Then **enable** the workflow. (Enabling is where the webhook gets
-registered — if it refuses, `PH_PUBLIC_URL` is not set; stop Vetra and
+registered — if it refuses, `PUBLIC_URL` is not set; stop Vetra and
 redo step 3.)
 
 ## 6. Upload a document
@@ -119,13 +119,13 @@ carries the invoice as Markdown — open the run in Connect to read the
 
 ## Troubleshooting
 
-- **Webhook trigger refuses to enable** — `PH_PUBLIC_URL` was not set
+- **Webhook trigger refuses to enable** — `PUBLIC_URL` was not set
   when Vetra started (step 3). It must be the origin the switchboard
   actually serves on and that paperless can reach: `http://localhost:4001`
   for this layout.
 - **Deliveries never arrive** — paperless can only reach the switchboard
   on loopback because it runs in the host netns (compose file). If you
-  change that, point `PH_PUBLIC_URL` at an address paperless can reach
+  change that, point `PUBLIC_URL` at an address paperless can reach
   and allow the webhook through whatever firewall sits in between.
 - **First docling conversion is slow** — the stock CPU image loads the
   layout model lazily on first use; later conversions are fast.
