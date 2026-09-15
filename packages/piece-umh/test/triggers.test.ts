@@ -78,6 +78,26 @@ describe("order progressed", () => {
     expect(second).toEqual([]);
   });
 
+  it("says whether anything has been counted, which is what a consumer branches on", async () => {
+    // The runtime's expressions have no arithmetic, so "good + scrap > 0" is
+    // not something a workflow can ask; a step that must not write an empty
+    // reading needs the answer as a field.
+    mock = await startMockUmh({ orders: [order({ id: "a", status: "CREATED" })] });
+    const store = new MemoryStore();
+    const context = contextFor(mock.baseUrl, { include_oee: false }, store);
+    await progressed.onEnable(context);
+
+    mock.state.orders = [order({ id: "a", status: "IN_PROGRESS", good_qty: 0 })];
+    const [started] = (await progressed.run(context)) as (Item & { counted: boolean })[];
+    mock.state.orders = [order({ id: "a", status: "IN_PROGRESS", good_qty: 1 })];
+    const [producing] = (await progressed.run(context)) as (Item & { counted: boolean })[];
+
+    expect(started.counted).toBe(false);
+    expect(started.qualityPct).toBeNull();
+    expect(producing.counted).toBe(true);
+    expect(producing.qualityPct).toBe(100);
+  });
+
   it("fires on a status change even when nothing was produced", async () => {
     mock = await startMockUmh({ orders: [order({ id: "a", status: "CREATED", good_qty: 0 })] });
     const store = new MemoryStore();
