@@ -170,7 +170,7 @@ const EXTRACTION_PROMPT = [
   "The target document model is umh/production-ledger. Its state schema:",
   "{{steps.model.output.stateSchema}}",
   "",
-  "Its operations, with their GraphQL input schemas:",
+  "The one operation you may use, with its GraphQL input schema:",
   "{{steps.model.output.actions}}",
   "",
   "The scanned document:",
@@ -262,7 +262,15 @@ export function purchaseOrderWorkflowGraph({
         key: "model",
         name: "Read the ledger's own schema",
         blockType: SCHEMA_BLOCK,
-        config: { documentType: LEDGER_TYPE },
+        config: {
+          documentType: LEDGER_TYPE,
+          // Narrowed to the one operation the extractor may use. The whole
+          // list is eleven operations of GraphQL input schema, most of which
+          // exist to close out or sign a ledger — sending them invites a model
+          // to reach for one, and makes the prompt several times larger than
+          // the document it is reading.
+          actionType: "SET_COMMITMENT",
+        },
         position: { x: 640, y: 0 },
       },
       {
@@ -272,6 +280,10 @@ export function purchaseOrderWorkflowGraph({
         blockType: ASK_LLM_BLOCK,
         connectionId: aiConnectionId,
         config: { model, prompt: EXTRACTION_PROMPT, temperature: 0 },
+        // The host's default is 30s, and a model reading a page of OCR and
+        // answering with JSON regularly takes longer — especially a large one
+        // behind a router that may queue the request.
+        timeoutSeconds: 180,
         position: { x: 960, y: 0 },
       },
       {

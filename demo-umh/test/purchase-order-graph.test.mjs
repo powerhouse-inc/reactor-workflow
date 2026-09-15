@@ -124,6 +124,29 @@ describe("the purchase-order workflow", () => {
     expect(by(GET_FILE_BLOCK)).toHaveLength(1);
   });
 
+  it("narrows the schema to the one operation the extractor may use", async () => {
+    // Eleven operations of input schema, most of them for closing out or
+    // signing, would dwarf the document being read and invite a model to reach
+    // for one.
+    const { by } = await run();
+
+    expect(by(SCHEMA_BLOCK)[0].config.actionType).toBe("SET_COMMITMENT");
+  });
+
+  it("gives the extraction longer than the host's default step timeout", async () => {
+    const graph = purchaseOrderWorkflowGraph({
+      paperlessConnectionId: "c",
+      aiConnectionId: "a",
+      ledgerDriveId: "d",
+      documentTypeId: 3,
+      model: "m",
+    });
+    const extract = graph.steps.find((step) => step.key === "extract");
+
+    // 30s is the default, and a page of OCR through a router exceeds it.
+    expect(extract.timeoutSeconds).toBeGreaterThan(30);
+  });
+
   it("hands the model the ledger's own schema rather than a hardcoded field list", async () => {
     // The step before the extraction reads the schema at run time, so the
     // prompt cannot drift from the document model.
