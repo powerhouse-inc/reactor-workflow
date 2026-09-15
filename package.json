@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "build": "pnpm --filter @powerhousedao/reactor-connectors build && pnpm --filter workflow build && pnpm --filter @powerhousedao/piece-docling build",
+    "build": "pnpm --filter @powerhousedao/reactor-connectors build && pnpm --filter workflow build && pnpm --filter @powerhousedao/piece-docling build && pnpm --filter @powerhousedao/piece-umh build",
     "dev": "pnpm --filter @powerhousedao/reactor-connectors build && pnpm --filter workflow vetra",
     "test": "pnpm -r --no-bail test",
     "tsc": "pnpm -r tsc",

@@ -80,6 +80,37 @@ importers:
         specifier: 4.1.1
         version: 4.1.1(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.25.12)(jiti@2.7.0)(terser@5.51.2)(yaml@2.9.0))
 
+  packages/piece-umh:
+    dependencies:
+      '@activepieces/pieces-framework':
+        specifier: 0.32.0
+        version: 0.32.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
+      '@activepieces/shared':
+        specifier: 0.95.1
+        version: 0.95.1(bufferutil@4.1.0)(utf-8-validate@5.0.10)
+    devDependencies:
+      '@powerhousedao/reactor-connectors':
+        specifier: workspace:*
+        version: link:../reactor-connectors
+      '@types/node':
+        specifier: ^24.13.3
+        version: 24.13.3
+      esbuild:
+        specifier: 0.25.12
+        version: 0.25.12
+      oxlint:
+        specifier: 1.70.0
+        version: 1.70.0(oxlint-tsgolint@0.23.0)
+      oxlint-tsgolint:
+        specifier: 0.23.0
+        version: 0.23.0
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 4.1.1
+        version: 4.1.1(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.25.12)(jiti@2.7.0)(terser@5.51.2)(yaml@2.9.0))
+
   packages/reactor-connectors:
     devDependencies:
       '@types/node':
@@ -203,6 +234,9 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
+      umh-production-ledger:
+        specifier: link:../../../umh-production-ledger
+        version: link:../../../umh-production-ledger
       vite:
         specifier: ^8.0.10
         version: 8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(yaml@2.9.0)

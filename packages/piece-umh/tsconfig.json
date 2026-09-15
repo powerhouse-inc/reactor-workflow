@@ -1,0 +1,24 @@
+{
+  "extends": "../../tsconfig.options.json",
+  "compilerOptions": {
+    "outDir": "./.tsbuild",
+    "module": "Preserve",
+    "moduleResolution": "bundler",
+    "types": [
+      "vitest/globals",
+      "node"
+    ],
+    "customConditions": [
+      "source"
+    ],
+    "allowImportingTsExtensions": true
+  },
+  "include": [
+    "**/*"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules",
+    ".tsbuild"
+  ]
+}
