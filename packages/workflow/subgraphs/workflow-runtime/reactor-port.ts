@@ -63,9 +63,19 @@ export function matchesState(
 ): boolean {
   if (!match) return true;
   const value = stateValueAt(document, match.path);
-  if (value === undefined || value === null) return false;
-  if (typeof value === "object") return false;
-  return String(value) === match.value;
+  if (typeof value === "string") return value === match.value;
+  // Only the scalars a state field plausibly holds. A path landing on an
+  // object, an array or nothing is a mismatch rather than an error — the
+  // documents being filtered share a type only by convention, and the step
+  // cannot know every shape it will meet.
+  if (
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint"
+  ) {
+    return String(value) === match.value;
+  }
+  return false;
 }
 
 export function documentSummary(
