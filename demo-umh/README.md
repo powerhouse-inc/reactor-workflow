@@ -138,6 +138,36 @@ the workflow and its connection go to **Workflows**, beside any others you have
 and under Workflow Studio; ledgers go to **PL Dashboard**, under the dashboard
 the ledger package ships.
 
+### Connect needs telling twice
+
+Connect is the other half of the reactor and shares none of its configuration:
+the browser fetches `powerhouse.config.json` over HTTP and reads its own
+`packages` list from there. `PH_REGISTRY_PACKAGES` is server-side only, so with
+that list empty the switchboard loads the ledger models perfectly and Connect
+still renders every ledger as an unknown type with no editor. The seed adds the
+entry; reload Connect after the first run.
+
+Two consequences worth knowing:
+
+- **Connect loads the published package, the switchboard loads the link.** The
+  browser resolves `umh-production-ledger` against `packageRegistryUrl` and
+  fetches `…/-/cdn/umh-production-ledger/browser/index.js` at whatever version
+  the registry has, while the reactor runs the linked local clone. Change the
+  model locally and Connect will not see it until you publish.
+- **Default drives cannot be configured under Vetra.** `ph vetra` builds its own
+  drives override — its Vetra and preview drives, with
+  `preserveStrategy: "preserve-all"` — and hands that to Connect Studio, so
+  `connect.drives.defaultDrives` never reaches the browser. The seed writes it
+  anyway, because `ph connect` and a Docker deployment do read it, and prints a
+  link per drive: open each once and preserve-all keeps it in the sidebar for
+  that browser.
+
+The ledger editor also talks to the floor API **directly from the browser**, and
+it defaults to `http://localhost:8081`. This demo's floor is on 18081, so the
+editor shows "UMH factory unreachable — line list is a static fallback". Set
+`localStorage.umhApiBaseUrl = "http://localhost:18081"` in Connect's console to
+give it the live list.
+
 1. Open Connect (Vetra prints the URL) and the **PL Dashboard** drive.
 2. Create a Production Ledger, fill in the commitment, and **Open** it.
 3. Put a floor order id into its `orderId` — either from

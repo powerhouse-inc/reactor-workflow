@@ -10,7 +10,11 @@
   "reactor": {
     "port": 4001
   },
-  "packages": [],
+  "packages": [
+    {
+      "packageName": "umh-production-ledger"
+    }
+  ],
   "packageRegistryUrl": "https://registry.dev.vetra.io",
   "connect": {
     "branding": {
@@ -28,7 +32,18 @@
     },
     "drives": {
       "allowAddDrive": true,
-      "defaultDrives": [],
+      "defaultDrives": [
+        {
+          "url": "http://localhost:4001/d/12be6c23-bdc8-4363-9b58-fc89ba0321f0",
+          "name": null,
+          "icon": null
+        },
+        {
+          "url": "http://localhost:4001/d/pl-dashboard",
+          "name": null,
+          "icon": null
+        }
+      ],
       "sections": {
         "remote": {
           "enabled": true,
