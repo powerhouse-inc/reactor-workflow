@@ -127,6 +127,7 @@ Environment variables read by the switchboard side:
 | `PH_SECRETS_MASTER_KEY` | 64 hex chars (32 bytes) encrypting managed secrets at rest. Without it a key file is generated for development. Set it in any shared or production deployment. |
 | `PH_SECRETS_ALLOW_WRITE` | Must be `true` to create or rotate secrets when `NODE_ENV` is not `development`. |
 | `WORKFLOW_POLL_INTERVAL_MS` | Development override for the default polling cadence of piece triggers; a 60 s floor still applies. |
+| `WORKFLOW_EGRESS_ALLOW_ADDRESSES` | Comma-separated addresses or CIDRs piece code may reach inside private address space, e.g. `127.0.0.1/32,::1/128`. Unset, every private address is denied — including the loopback services a local demo connects to. A bare address means that one host. |
 
 Connect-side flags live in `packages/workflow/powerhouse.config.json` under
 `connect`. `connect.ai.assistantEnabled` turns on the in-browser AI assistant.
