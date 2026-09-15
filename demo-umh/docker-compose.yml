@@ -48,30 +48,41 @@ services:
       retries: 20
       start_period: 10s
 
-  # Both paperless services run on the HOST network namespace, as demo/ does.
-  # The paperless trigger registers a webhook that posts deliveries back to the
-  # switchboard — a process on this machine. On a bridge network that address is
-  # host.docker.internal, which many hosts drop at the firewall; on the host
-  # netns both directions are plain loopback. The simulator needs no inbound
-  # path (the UMH piece polls it), so it stays on a normal bridge.
+  # Paperless on a bridge with a published port, not on the host network
+  # namespace that demo/ uses.
+  #
+  # Host networking only reaches the host on Linux (and on runtimes that bridge
+  # it, like OrbStack). On Docker Desktop the container shares the *VM's*
+  # network, so paperless answers perfectly inside the container and nothing on
+  # the Mac can see it — which is exactly how this demo failed first time.
+  #
+  # The webhook direction then needs the reverse hop: paperless posts deliveries
+  # to the switchboard running on the host, which from inside a container is
+  # host.docker.internal. That is what PH_PUBLIC_URL must say — see the README.
+  # PAPERLESS_WEBHOOKS_ALLOW_INTERNAL_REQUESTS is what lets paperless post to it
+  # at all, since that address resolves into private space.
   paperless-broker:
     image: docker.io/library/redis:7
-    network_mode: host
-    command: ["redis-server", "--port", "16379"]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   # 2.18.4, not 3.x: that is the API line packages/piece-paperless-ngx was built
   # and verified against. Paperless 3.0 removed the API upload endpoint, which
   # breaks the piece's upload_document action.
   paperless:
     image: ghcr.io/paperless-ngx/paperless-ngx:2.18.4
-    network_mode: host
-    depends_on:
-      - paperless-broker
     restart: unless-stopped
+    depends_on:
+      paperless-broker:
+        condition: service_healthy
+    ports:
+      - "18000:8000"
     environment:
-      PAPERLESS_PORT: "18000"
-      PAPERLESS_REDIS: redis://localhost:16379
+      PAPERLESS_REDIS: redis://paperless-broker:6379
       PAPERLESS_URL: http://localhost:18000
       PAPERLESS_TIME_ZONE: UTC
       PAPERLESS_OCR_LANGUAGE: eng
@@ -80,13 +91,13 @@ services:
       PAPERLESS_ADMIN_MAIL: admin@example.com
       # Any value works for a throwaway instance; do not reuse a real secret.
       PAPERLESS_SECRET_KEY: demo-only-not-a-real-secret
-      # The webhook delivery target is loopback, which paperless counts as
-      # internal and refuses by default.
+      # The delivery target resolves into private address space, which paperless
+      # refuses by default.
       PAPERLESS_WEBHOOKS_ALLOW_INTERNAL_REQUESTS: "true"
     volumes:
       - umh-demo-data:/usr/src/paperless/data
       - umh-demo-media:/usr/src/paperless/media
-      - umh-demo-consume:/usr/src/paperless/consume
+      - ./.local/consume:/usr/src/paperless/consume
       - umh-demo-export:/usr/src/paperless/export
       # The image feeds its s6-rc services the container env via with-contenv;
       # if that materialization comes up empty (seen after container
@@ -98,6 +109,11 @@ services:
       - ./paperless.env:/etc/s6-overlay/s6-rc.d/svc-worker/environment
       - ./paperless.env:/etc/s6-overlay/s6-rc.d/svc-scheduler/environment
       - ./paperless.env:/etc/s6-overlay/s6-rc.d/svc-flower/environment
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8000/api/"]
+      interval: 10s
+      timeout: 5s
+      retries: 40
 
 volumes:
   umh-demo-data:

@@ -6,3 +6,5 @@ dist/
 tsconfig.tsbuildinfo
 coverage/
 demo/.paperless-token
+# The demo's OpenRouter key. Never commit it.
+demo-umh/.env
