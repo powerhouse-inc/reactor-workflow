@@ -108,6 +108,13 @@ export const orderEventFields: OutputField[] = [
   ...actualsFields,
   lifecycleField,
   {
+    key: "counted",
+    label: "Anything counted",
+    format: "boolean",
+    description:
+      "False while the floor has produced neither a good piece nor a scrap one — the same condition that makes Quality % null.",
+  },
+  {
     key: "changed",
     label: "What changed",
     description: "Which fields moved since the previous poll.",

@@ -1,0 +1,215 @@
+// Wires the demo on a running reactor: a drive, a connection to the factory
+// floor, and the workflow that replaces the `umh-order-poller` processor.
+//
+//   node demo-umh/scripts/seed.mjs
+//
+// Idempotent by name: every step looks before it writes, so re-running it after
+// a restart is the intended mode. It never edits a workflow that already
+// exists — delete the document and re-run to rebuild one.
+//
+// Environment (defaults suit demo-umh/docker-compose.yml + `ph vetra`):
+//   REACTOR_URL   http://localhost:4001
+//   UMH_API_URL   http://localhost:18081   the floor, as the REACTOR sees it
+import {
+  DISPATCH_BLOCK,
+  FIND_BLOCK,
+  floorWorkflowGraph,
+  LEDGER_TYPE,
+  TRIGGER_BLOCK,
+  UMH_PIECE,
+} from "./graph.mjs";
+
+const REACTOR_URL = (process.env.REACTOR_URL ?? "http://localhost:4001").replace(/\/+$/, "");
+const UMH_API_URL = (process.env.UMH_API_URL ?? "http://localhost:18081").replace(/\/+$/, "");
+
+const DRIVE_NAME = "PL Dashboard";
+const DRIVE_SLUG = "pl-dashboard";
+// A drive's preferredEditor must target powerhouse/document-drive — that is the
+// dashboard APP. Individual ledgers open in the ledger editor on their own,
+// because its documentTypes match.
+const DRIVE_EDITOR = "production-ledger-dashboard";
+
+const CONNECTION_NAME = "UMH Factory Floor";
+const WORKFLOW_NAME = "Floor evidence -> ledger";
+
+const log = (message) => console.log(message);
+
+async function gql(query, variables = {}) {
+  const response = await fetch(`${REACTOR_URL}/graphql`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ query, variables }),
+  });
+  const body = await response.json();
+  if (body.errors?.length) {
+    throw new Error(`GraphQL: ${body.errors[0].message}`);
+  }
+  return body.data;
+}
+
+async function waitForReactor(seconds = 120) {
+  const deadline = Date.now() + seconds * 1000;
+  for (;;) {
+    try {
+      await gql("{ __typename }");
+      log(`reactor is up at ${REACTOR_URL}`);
+      return;
+    } catch (error) {
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `No reactor at ${REACTOR_URL} after ${seconds}s. Start Vetra first:\n` +
+            "  cd packages/workflow && PH_REGISTRY_PACKAGES=umh-production-ledger UMH_POLLER_ENABLED=false pnpm vetra --strictPort\n" +
+            `(last error: ${error.message})`,
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
+  }
+}
+
+// The floor is read by the reactor, not by this script, so the address checked
+// here is the one the connection will carry — a floor this script can reach on
+// a different address would be a connection that fails on first use.
+async function checkFloor() {
+  const response = await fetch(`${UMH_API_URL}/health`);
+  if (!response.ok) throw new Error(`floor /health answered ${response.status}`);
+  const simulation = await (await fetch(`${UMH_API_URL}/api/simulation`)).json();
+  log(
+    `floor is up at ${UMH_API_URL} (${simulation.line_count} lines, ${simulation.machine_count} machines)`,
+  );
+}
+
+async function childrenOf(driveId) {
+  const data = await gql(
+    `query($id:String!) {
+       documentOutgoingRelationships(
+         sourceIdentifier:$id, relationshipType:"child", paging:{limit:200}) {
+           items { id name documentType } } }`,
+    { id: driveId },
+  );
+  return data.documentOutgoingRelationships.items;
+}
+
+async function ensureDrive() {
+  const data = await gql("{ drives { id slug name } }").catch(() => null);
+  const existing = data?.drives?.find((drive) => drive.slug === DRIVE_SLUG);
+  if (existing) {
+    log(`drive "${existing.name}" already exists (${existing.id})`);
+    return existing.id;
+  }
+  const created = await gql(
+    `mutation($name:String!,$slug:String,$editor:String) {
+       DocumentDrive { createDocument(name:$name, slug:$slug, preferredEditor:$editor) { id } } }`,
+    { name: DRIVE_NAME, slug: DRIVE_SLUG, editor: DRIVE_EDITOR },
+  );
+  const id = created.DocumentDrive.createDocument.id;
+  log(`created drive "${DRIVE_NAME}" (${id})`);
+  return id;
+}
+
+async function ensureConnection(driveId) {
+  const existing = (await childrenOf(driveId)).find(
+    (item) =>
+      item.documentType === "powerhouse/connection" && item.name === CONNECTION_NAME,
+  );
+  if (existing) {
+    log(`connection "${CONNECTION_NAME}" already exists (${existing.id})`);
+    return existing.id;
+  }
+  const created = await gql(
+    `mutation($name:String!,$parent:String) {
+       Connection { createDocument(name:$name, parentIdentifier:$parent) { id } } }`,
+    { name: CONNECTION_NAME, parent: driveId },
+  );
+  const id = created.Connection.createDocument.id;
+  // The floor API has no credential, so the connection is an address and
+  // nothing else: no secret ref, and no secrets service involved.
+  await gql(
+    `mutation($doc:PHID!,$input:Connection_SetConnectorInput!) {
+       Connection { setConnector(docId:$doc, input:$input) { id } } }`,
+    { doc: id, input: { connectorId: UMH_PIECE, authType: "CUSTOM_AUTH" } },
+  );
+  await gql(
+    `mutation($doc:PHID!,$input:Connection_SetConfigInput!) {
+       Connection { setConfig(docId:$doc, input:$input) { id } } }`,
+    { doc: id, input: { config: { base_url: UMH_API_URL } } },
+  );
+  log(`created connection "${CONNECTION_NAME}" -> ${UMH_API_URL} (${id})`);
+  return id;
+}
+
+async function ensureWorkflow(driveId, connectionId) {
+  const existing = (await childrenOf(driveId)).find(
+    (item) =>
+      item.documentType === "powerhouse/workflow" && item.name === WORKFLOW_NAME,
+  );
+  if (existing) {
+    log(
+      `workflow "${WORKFLOW_NAME}" already exists (${existing.id}) — delete it to rebuild`,
+    );
+    return existing.id;
+  }
+  const created = await gql(
+    `mutation($name:String!,$parent:String) {
+       Workflow { createDocument(name:$name, parentIdentifier:$parent) { id } } }`,
+    { name: WORKFLOW_NAME, parent: driveId },
+  );
+  const id = created.Workflow.createDocument.id;
+  const graph = floorWorkflowGraph(connectionId);
+
+  await gql(
+    `mutation($doc:PHID!,$input:Workflow_SetTriggerInput!) {
+       Workflow { setTrigger(docId:$doc, input:$input) { id } } }`,
+    { doc: id, input: graph.trigger },
+  );
+  for (const step of graph.steps) {
+    await gql(
+      `mutation($doc:PHID!,$input:Workflow_AddStepInput!) {
+         Workflow { addStep(docId:$doc, input:$input) { id } } }`,
+      { doc: id, input: step },
+    );
+  }
+  for (const edge of graph.edges) {
+    await gql(
+      `mutation($doc:PHID!,$input:Workflow_AddEdgeInput!) {
+         Workflow { addEdge(docId:$doc, input:$input) { id } } }`,
+      { doc: id, input: edge },
+    );
+  }
+  // Last, deliberately: only an ENABLED workflow registers a trigger instance,
+  // and a half-built graph that starts polling would run against missing steps.
+  await gql(
+    `mutation($doc:PHID!,$input:Workflow_SetWorkflowStatusInput!) {
+       Workflow { setWorkflowStatus(docId:$doc, input:$input) { id } } }`,
+    { doc: id, input: { status: "ENABLED" } },
+  );
+  log(
+    `created workflow "${WORKFLOW_NAME}" (${id}) — ${graph.steps.length} steps, ENABLED`,
+  );
+  return id;
+}
+
+await waitForReactor();
+await checkFloor();
+const driveId = await ensureDrive();
+const connectionId = await ensureConnection(driveId);
+const workflowId = await ensureWorkflow(driveId, connectionId);
+
+log(`
+Seeded.
+
+  drive       ${driveId}
+  connection  ${connectionId}
+  workflow    ${workflowId}
+
+Next:
+  1. Open Connect and create a Production Ledger in the "${DRIVE_NAME}" drive.
+  2. Set its commitment, then set its Order ID to an order on the floor — or
+     have a workflow create the order and bind it.
+  3. Open the ledger (status OPEN) so evidence is judged against a frozen
+     baseline; the workflow ignores ledgers in any other status.
+  4. Watch the runs:
+     curl -s ${REACTOR_URL}/graphql/workflow-runtime \\
+       -H 'content-type: application/json' \\
+       -d '{"query":"{ workflowRuntime { runs(limit: 5) { workflowName status steps { key status } } } }"}'
+`);
