@@ -3,6 +3,15 @@
 @import "tailwindcss";
 @import "@powerhousedao/connect/style.css";
 
+/* Tailwind v4 detects its sources automatically but never looks inside
+   node_modules, so a reactor package's editors are invisible to it: every
+   utility only they use is simply not generated, and the class sits on the
+   element with no rule behind it. What you see then is Preflight's
+   `padding: 0` winning by default rather than overriding anything.
+   `@source` opts a package back in; the browser bundle is the built artifact
+   the class names survive into. */
+@source "./node_modules/umh-production-ledger/dist/browser";
+
 @theme {
   /* You can customize the theme by overriding the theme variables here */
   /* See https://tailwindcss.com/docs/theme#using-a-custom-theme for details */
