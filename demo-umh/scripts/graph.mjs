@@ -61,9 +61,16 @@ export function floorWorkflowGraph(connectionId) {
       connectionId,
       config: {
         include_oee: true,
-        // Ours, not the piece's: the runtime lifts it out of the config and
-        // floors it at 60s (MIN_SCHEDULE_INTERVAL_MS).
-        pollEverySeconds: 60,
+        // Ours, not the piece's: the runtime lifts it out of the config before
+        // the piece sees it. 15s is the cadence the processor this workflow
+        // replaces polled at, and the pace a demo needs — a two-minute run
+        // with a reading a minute looks like nothing is happening.
+        //
+        // The runtime floors it at MIN_SCHEDULE_INTERVAL_MS (60s), so this
+        // asks for 15 and gets 60 until that floor is lifted. Kept at the
+        // intended value rather than the achievable one: the config says what
+        // this workflow wants, and the floor is the runtime's to relax.
+        pollEverySeconds: 15,
       },
     },
     steps: [
@@ -194,6 +201,9 @@ const EXTRACTION_PROMPT = [
   "  repair an obvious mis-scan when the intent is clear.",
   "- Leave orderId unset. Nothing has been dispatched to the floor yet; a reviewer",
   "  approves the ledger and that is what creates the order.",
+  "- Leave line unset. It names a production line on the factory floor, not the",
+  "  programme or platform the order refers to; you cannot see the floor and its",
+  "  names are not in this document. The reviewer picks it from the live list.",
 ].join("\n");
 
 // The workflow that replaces the `paperless-sync` processor.
@@ -231,12 +241,11 @@ export function purchaseOrderWorkflowGraph({
       blockType: NEW_DOCUMENT_BLOCK,
       connectionId: paperlessConnectionId,
       config: {
-        // The piece sends paperless 3.x's `filter_has_any_document_types`,
-        // and this demo pins 2.18.4, whose trigger field is the singular
-        // `filter_has_document_type`. Paperless accepts the unknown field and
-        // ignores it, so the delivery is NOT filtered at the source here — the
-        // guard below is what actually decides. Kept anyway: on 3.x it is the
-        // filter, and it costs nothing where it is ignored.
+        // The piece translates this to 2.18's singular
+        // `filter_has_document_type`, so paperless filters the delivery at
+        // the source and applies the same filter to the reconciliation
+        // sweep. (It did not always: the 3.x name went over as-is, DRF
+        // dropped it, and the guard below was what actually decided.)
         ...(documentTypeId ? { filter_has_any_document_types: [documentTypeId] } : {}),
         // The OCR text is the input to the extraction; without this the
         // trigger omits it, and it is usually the largest field paperless has.
@@ -248,6 +257,9 @@ export function purchaseOrderWorkflowGraph({
         id: kind,
         key: "purchase_order",
         name: "Is it a purchase order?",
+        // Redundant now that the trigger filters, and kept: it is the same
+        // decision written where a reader of the workflow can see it, and it
+        // still holds if the trigger is reconfigured or its filter cleared.
         blockType: "core#branch",
         config: {
           condition: "{{trigger.payload.document_type}}",
