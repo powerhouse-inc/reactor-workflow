@@ -239,6 +239,73 @@ describe("onEnable", () => {
   });
 });
 
+describe("the filters, across both API lines", () => {
+  it("sends the multi-valued names to a 3.x server", async () => {
+    await runHook(newDocument, "onEnable", {
+      auth: authFor(mock),
+      webhookUrl: WEBHOOK_URL,
+      props: { filter_has_any_document_types: [4], filter_has_tags: [7] },
+    });
+
+    expect(registeredWorkflow().triggers[0]).toMatchObject({
+      filter_has_any_document_types: [4],
+      filter_has_tags: [7],
+    });
+  });
+
+  describe("on the 2.18 line, whose trigger serializer is single-valued", () => {
+    beforeEach(async () => {
+      await mock.close();
+      mock = await startMockPaperless({
+        allowedVersions: [9],
+        serverVersion: "2.18.4",
+      });
+    });
+
+    it("sends the field that serializer actually has", async () => {
+      await runHook(newDocument, "onEnable", {
+        auth: authFor(mock),
+        webhookUrl: WEBHOOK_URL,
+        props: { filter_has_any_document_types: [4], filter_has_tags: [7] },
+      });
+
+      const trigger = registeredWorkflow().triggers[0];
+      // DRF drops the 3.x name without a word, which would have registered a
+      // trigger with no document-type filter at all — firing on everything.
+      expect(trigger).not.toHaveProperty("filter_has_any_document_types");
+      expect(trigger).toMatchObject({
+        filter_has_document_type: 4,
+        // Unchanged: an intersection on both lines.
+        filter_has_tags: [7],
+      });
+    });
+
+    it("refuses several document types instead of registering one of them", async () => {
+      await expect(
+        runHook(newDocument, "onEnable", {
+          auth: authFor(mock),
+          webhookUrl: WEBHOOK_URL,
+          props: { filter_has_any_document_types: [4, 5] },
+        }),
+      ).rejects.toThrow(
+        /paperless-ngx 2\.18\.4 speaks API version 9.*single document type/s,
+      );
+      expect(mock.workflows.size).toBe(0);
+    });
+
+    it("refuses a filter that arrived in 3.0 instead of dropping it", async () => {
+      await expect(
+        runHook(newDocument, "onEnable", {
+          auth: authFor(mock),
+          webhookUrl: WEBHOOK_URL,
+          props: { filter_has_any_storage_paths: [2] },
+        }),
+      ).rejects.toThrow(/"Storage path is any of".*3\.0/s);
+      expect(mock.workflows.size).toBe(0);
+    });
+  });
+});
+
 describe("onDisable", () => {
   it("deletes the workflow, the action and the trigger", async () => {
     const store = new MemoryStore();
@@ -311,6 +378,47 @@ describe("run", () => {
     );
   });
 
+  it("reads the id out of the request envelope a real delivery arrives in", async () => {
+    const document = mock.seedDocument({ title: "Purchase order 88" });
+    // What the runtime passes through: paperless posts {doc_id, event} as the
+    // JSON body, and doc_id is a string because Jinja renders every
+    // placeholder as one.
+    const items = (await runHook(newDocument, "run", {
+      auth: authFor(mock),
+      payload: {
+        method: "POST",
+        path: `/webhooks/${"a".repeat(32)}`,
+        headers: { "content-type": "application/json" },
+        queryParams: {},
+        body: { doc_id: String(document.id), event: "DOCUMENT_ADDED" },
+      },
+    })) as Record<string, unknown>[];
+
+    // Exactly the document named — not "everything since the cursor", which is
+    // what an unread id silently falls back to.
+    expect(items).toHaveLength(1);
+    expect(items[0].id).toBe(document.id);
+    expect(items[0].title).toBe("Purchase order 88");
+  });
+
+  it("reads the id from the query string when as_json is off", async () => {
+    const document = mock.seedDocument({ title: "Query-string delivery" });
+
+    const items = (await runHook(newDocument, "run", {
+      auth: authFor(mock),
+      payload: {
+        method: "POST",
+        path: "/webhooks/abc",
+        headers: {},
+        queryParams: { doc_id: String(document.id) },
+        body: undefined,
+      },
+    })) as Record<string, unknown>[];
+
+    expect(items).toHaveLength(1);
+    expect(items[0].id).toBe(document.id);
+  });
+
   it("keeps the OCR text when the trigger asks for it", async () => {
     const document = mock.seedDocument({ content: "scanned words" });
 
@@ -378,6 +486,77 @@ describe("run", () => {
       store,
     })) as Record<string, unknown>[];
     expect(again).toEqual([]);
+  });
+
+  it("asks for the trigger's filters, which no delivery applies to a sweep", async () => {
+    const wanted = mock.seedDocument({ document_type: 4 });
+    mock.seedDocument({ document_type: 5 });
+    mock.seedDocument({ document_type: null });
+
+    const items = (await runHook(newDocument, "run", {
+      auth: authFor(mock),
+      store: new MemoryStore(),
+      props: { filter_has_any_document_types: [4] },
+    })) as Record<string, unknown>[];
+
+    expect(items.map((item) => item.id)).toEqual([wanted.id]);
+  });
+
+  it("joins ids with commas, the only spelling an `in` lookup reads", async () => {
+    mock.seedDocument({ document_type: 4, tags: [7] });
+    mock.seedDocument({ document_type: 5, tags: [7, 8] });
+    // Excluded by each filter in turn: the two AND together, as they do in
+    // paperless.
+    mock.seedDocument({ document_type: 6, tags: [7] });
+    mock.seedDocument({ document_type: 4, tags: [9] });
+
+    const items = (await runHook(newDocument, "run", {
+      auth: authFor(mock),
+      store: new MemoryStore(),
+      props: { filter_has_any_document_types: [4, 5], filter_has_tags: [7] },
+    })) as Record<string, unknown>[];
+
+    expect(items).toHaveLength(2);
+    const sweep = mock.requests.filter(
+      (request) => request.method === "GET" && request.path === "/documents/",
+    );
+    // Repeated params would leave Django reading only the last id.
+    expect(sweep.at(-1)?.query.document_type__id__in).toEqual(["4,5"]);
+    expect(sweep.at(-1)?.query.tags__id__in).toEqual(["7"]);
+  });
+
+  it("applies the filename glob the documents endpoint cannot express", async () => {
+    const invoice = mock.seedDocument({ original_file_name: "invoice-9.pdf" });
+    mock.seedDocument({ original_file_name: "photo.png" });
+
+    const items = (await runHook(newDocument, "run", {
+      auth: authFor(mock),
+      store: new MemoryStore(),
+      props: { filter_filename: "*.pdf" },
+    })) as Record<string, unknown>[];
+
+    expect(items.map((item) => item.id)).toEqual([invoice.id]);
+  });
+
+  it("advances the cursor past documents the glob dropped", async () => {
+    const store = new MemoryStore();
+    await store.put("paperless:sweep-cursor", "2026-09-01T00:00:00.000Z");
+    mock.seedDocument({
+      added: "2026-09-02T00:00:00.000Z",
+      original_file_name: "photo.png",
+    });
+
+    const items = (await runHook(newDocument, "run", {
+      auth: authFor(mock),
+      store,
+      props: { filter_filename: "*.pdf" },
+    })) as Record<string, unknown>[];
+
+    expect(items).toEqual([]);
+    // Otherwise every sweep re-reads the same page of unwanted documents.
+    expect(store.entries.get("paperless:sweep-cursor")).toBe(
+      "2026-09-02T00:00:00.000Z",
+    );
   });
 
   it("sweeps the updated trigger by modified, not added", async () => {

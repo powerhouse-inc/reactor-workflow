@@ -34,6 +34,18 @@ API and from the 3.0 rewrite:
 - Task states use Celery's uppercase states (`PENDING`, `SUCCESS`, …)
   and the task's document link is the string `related_document` field —
   the `get_task` action normalizes both.
+- **Workflow triggers filter on one correspondent and one document
+  type.** `OPTIONS /api/workflows/` on 2.18.4 lists
+  `filter_has_correspondent` and `filter_has_document_type` (single
+  ids, compared with `!=` in `matching.py`); the multi-valued
+  `filter_has_any_*` / `filter_has_not_*` names and the storage-path
+  filter are 3.0 additions. DRF **drops an unknown field without
+  complaining**, so sending the 3.x names here registers a trigger with
+  no filter at all — one that fires on every document, silently. The
+  triggers send the names the negotiated API version understands, and
+  refuse a filter that line cannot express rather than dropping it.
+  `filter_has_tags` means "any of" on both lines and needs no
+  translation.
 
 Paperless **3.0** rewrites the API again (a different router and request
 shapes), so the pin stays at 2.18.x until the piece is ported. The
@@ -67,8 +79,16 @@ posts there on the event.
 | **New document** | A document enters the archive (uploaded, mailed, or watched-folder) |
 | **Document updated** | A document's metadata changes |
 
+The filter props are registered with paperless, so deliveries arrive
+already narrowed. They are also applied to the **reconciliation sweep** —
+the poll that catches deliveries paperless dropped — as query params on
+`/api/documents/`, because a filter registered on a workflow says nothing
+about a list request. The filename glob has no equivalent lookup there
+(`CHAR_KWARGS` is `istartswith`/`iendswith`/`icontains`/`iexact`), so the
+sweep applies that one itself, matching paperless's own fnmatch.
+
 Registering the endpoint requires the reactor to have a public origin
-the paperless instance can reach: start Vetra with `PH_PUBLIC_URL` set to
+the paperless instance can reach: start Vetra with `PUBLIC_URL` set to
 that origin (for the local demo, `http://localhost:4001` — paperless runs
 in the host network namespace and the switchboard is on loopback; the
 demo compose also sets

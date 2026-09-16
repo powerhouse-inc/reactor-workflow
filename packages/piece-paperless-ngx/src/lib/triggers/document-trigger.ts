@@ -4,7 +4,7 @@ import {
   TriggerStrategy,
 } from "@activepieces/pieces-framework";
 import { paperlessAuth } from "../auth";
-import type { PaperlessClient, QueryValue } from "../common/client";
+import type { PaperlessClient, QueryValue, UiSettings } from "../common/client";
 import { clientFor, type StoreLike } from "../common/context";
 import { trimContent } from "../common/documents";
 import { PaperlessApiError } from "../common/errors";
@@ -52,6 +52,11 @@ export interface WebhookPayload {
   docId?: number | string;
   doc_id?: number | string;
   event?: string;
+  // The runtime hands a webhook trigger the request envelope, the way
+  // Activepieces does — `{ method, path, headers, queryParams, body }` — so
+  // what paperless posted is one level down.
+  body?: unknown;
+  queryParams?: unknown;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -105,10 +110,7 @@ export function buildWebhookParams(event: string): Record<string, string> {
   return { doc_id: "{{doc_id}}", event };
 }
 
-// `docId` from the older GraphQL ingress, `doc_id` from a paperless param,
-// which substitutes placeholders as strings.
-function readDocId(payload: WebhookPayload | undefined): number | undefined {
-  const raw = payload?.docId ?? payload?.doc_id;
+function asDocId(raw: unknown): number | undefined {
   if (typeof raw === "number") return Number.isFinite(raw) ? raw : undefined;
   if (typeof raw === "string" && /^\d+$/.test(raw.trim())) {
     return Number(raw.trim());
@@ -116,13 +118,150 @@ function readDocId(payload: WebhookPayload | undefined): number | undefined {
   return undefined;
 }
 
+/**
+ * The id paperless named, from wherever this delivery carries it.
+ *
+ * `body` is where a real delivery puts it: the runtime passes the request
+ * envelope through untouched, and paperless posts `{doc_id, event}` as the
+ * JSON body. `queryParams` covers a registration made by hand with `as_json`
+ * off, where the params ride the query string instead. The flat spellings are
+ * the older GraphQL ingress, and `docId` its camelCase.
+ *
+ * Reading only the flat shape is how this came to fall through to the
+ * reconciliation sweep on every delivery — which works, because the supervisor
+ * rewinds the cursor before a delivery, but it emits everything since that
+ * cursor rather than the one document paperless pointed at, and a document
+ * older than the rewind window is missed outright.
+ */
+function readDocId(payload: WebhookPayload | undefined): number | undefined {
+  const nested = [payload?.body, payload?.queryParams].filter(isRecord);
+  for (const source of nested) {
+    const id = asDocId(source.docId ?? source.doc_id);
+    if (id !== undefined) return id;
+  }
+  return asDocId(payload?.docId ?? payload?.doc_id);
+}
+
+// paperless-ngx 3.0 — API version 10 — replaced the workflow trigger's
+// single-valued correspondent and document-type filters with multi-valued ones
+// and added the "all of" / "none of" variants. Version 9, the 2.18 line, has
+// only `filter_has_tags`, `filter_has_correspondent` and
+// `filter_has_document_type`: OPTIONS /api/workflows/ against 2.18.4 lists
+// exactly those.
+//
+// The rename matters more than a rename usually would. DRF drops unknown
+// fields without a word, so a 3.x-shaped body registers a trigger carrying no
+// document-type filter at all, and a workflow meant to fire on purchase orders
+// fires on every document that lands.
+const MULTI_VALUED_FILTER_API_VERSION = 10;
+
+// Only these two need translating: `filter_has_tags` is an intersection on
+// both lines ("any of"). matching.py compares each of these with `!=` against
+// one id.
+const SINGLE_VALUED_FILTERS = [
+  {
+    prop: "filter_has_any_correspondents",
+    field: "filter_has_correspondent",
+    noun: "correspondent",
+  },
+  {
+    prop: "filter_has_any_document_types",
+    field: "filter_has_document_type",
+    noun: "document type",
+  },
+] as const;
+
+// Filters that arrived with 3.0, labelled the way the props present them.
+const FILTERS_ADDED_IN_V10: Record<string, string> = {
+  filter_has_all_tags: "Has all of these tags",
+  filter_has_not_tags: "Has none of these tags",
+  filter_has_not_correspondents: "Correspondent is none of",
+  filter_has_not_document_types: "Document type is none of",
+  filter_has_any_storage_paths: "Storage path is any of",
+  filter_has_not_storage_paths: "Storage path is none of",
+};
+
+// The document-list query param that means the same as each trigger filter.
+// These are stable across both lines — 3.0 changed the trigger serializer, not
+// the document filterset.
+const SWEEP_FILTERS: Record<string, string> = {
+  filter_has_tags: "tags__id__in",
+  filter_has_all_tags: "tags__id__all",
+  filter_has_not_tags: "tags__id__none",
+  filter_has_any_correspondents: "correspondent__id__in",
+  filter_has_not_correspondents: "correspondent__id__none",
+  filter_has_any_document_types: "document_type__id__in",
+  filter_has_not_document_types: "document_type__id__none",
+  filter_has_any_storage_paths: "storage_path__id__in",
+  filter_has_not_storage_paths: "storage_path__id__none",
+};
+
+function isFilterSet(value: unknown): boolean {
+  if (value === undefined || value === null || value === "") return false;
+  return !Array.isArray(value) || value.length > 0;
+}
+
+function idList(value: unknown): number[] {
+  const raw = Array.isArray(value) ? value : [value];
+  return raw
+    .map((entry) => Number(entry))
+    .filter((entry) => Number.isInteger(entry));
+}
+
+/**
+ * Rewrites the props for a pre-3.0 trigger serializer, refusing what that line
+ * cannot express rather than dropping it. Paperless ignores a filter it does
+ * not know, which widens the trigger instead of narrowing it — the opposite of
+ * what was asked for, and silent either way.
+ */
+function downgradeFilters(
+  props: Record<string, unknown>,
+  serverVersion: string | undefined,
+): Record<string, unknown> {
+  const line = serverVersion
+    ? `paperless-ngx ${serverVersion} speaks API version 9, whose workflow triggers`
+    : "This paperless-ngx speaks API version 9, whose workflow triggers";
+  const downgraded: Record<string, unknown> = { ...props };
+
+  for (const { prop, field, noun } of SINGLE_VALUED_FILTERS) {
+    delete downgraded[prop];
+    if (!isFilterSet(props[prop])) continue;
+    const ids = idList(props[prop]);
+    if (ids.length > 1) {
+      throw new PaperlessApiError(
+        `${line} match a single ${noun}, not several. Pick one, or leave the ` +
+          "filter empty and decide in the workflow.",
+        { category: "config" },
+      );
+    }
+    if (ids.length === 1) downgraded[field] = ids[0];
+  }
+
+  for (const [prop, label] of Object.entries(FILTERS_ADDED_IN_V10)) {
+    if (!isFilterSet(props[prop])) continue;
+    throw new PaperlessApiError(
+      `${line} have no "${label}" filter — it arrived in paperless-ngx 3.0. ` +
+        "Clear it, or filter in the workflow instead.",
+      { category: "config" },
+    );
+  }
+
+  return downgraded;
+}
+
 function triggerBody(
   type: number,
   props: Record<string, unknown>,
+  apiVersion: number,
+  serverVersion?: string,
 ): Record<string, unknown> {
+  const fields =
+    apiVersion >= MULTI_VALUED_FILTER_API_VERSION
+      ? props
+      : downgradeFilters(props, serverVersion);
   const body: Record<string, unknown> = { type };
   const copy = (key: string) => {
-    const value = props[key];
+    const value = fields[key];
     if (value !== undefined && value !== null && value !== "") {
       body[key] = value;
     }
@@ -135,16 +274,92 @@ function triggerBody(
   copy("filter_has_tags");
   copy("filter_has_all_tags");
   copy("filter_has_not_tags");
+  // The version 9 spellings, present only after a downgrade.
+  copy("filter_has_correspondent");
+  copy("filter_has_document_type");
   copy("filter_has_any_correspondents");
   copy("filter_has_not_correspondents");
   copy("filter_has_any_document_types");
   copy("filter_has_not_document_types");
   copy("filter_has_any_storage_paths");
   copy("filter_has_not_storage_paths");
-  if (Array.isArray(props.sources) && props.sources.length > 0) {
-    body.sources = props.sources;
+  if (Array.isArray(fields.sources) && fields.sources.length > 0) {
+    body.sources = fields.sources;
   }
   return body;
+}
+
+/**
+ * The same filters as query params, for the reconciliation sweep — which asks
+ * the documents endpoint rather than being delivered to, and so is not covered
+ * by the filters registered in paperless. Without these the sweep emits every
+ * document added since the cursor whatever the trigger was configured to
+ * watch, so a filtered trigger fires on everything the moment one webhook
+ * delivery is missed.
+ *
+ * Ids go as one comma-joined value: the `in` lookups split on commas, and
+ * repeated params would leave Django reading only the last. A non-integer
+ * makes ObjectFilter hand back the queryset untouched, so non-integers are
+ * dropped here rather than quietly widening the sweep.
+ *
+ * `sources`, `match` and `matching_algorithm` have no document-list
+ * equivalent; paperless leaves them out of its own scheduled-trigger sweep
+ * (`filter_documents`) for the same reason.
+ */
+function sweepFilters(
+  props: Record<string, unknown>,
+): Record<string, QueryValue> {
+  const query: Record<string, QueryValue> = {};
+  for (const [prop, param] of Object.entries(SWEEP_FILTERS)) {
+    if (!isFilterSet(props[prop])) continue;
+    const ids = idList(props[prop]);
+    if (ids.length > 0) query[param] = ids.join(",");
+  }
+  return query;
+}
+
+// fnmatch, as paperless applies `filter_filename` — against the original
+// filename, case-insensitively. The documents endpoint has no glob lookup
+// (CHAR_KWARGS is istartswith/iendswith/icontains/iexact), so the sweep
+// matches here instead. Everything but `*`, `?` and a `[set]` is escaped, so
+// no pattern can throw on construction.
+function globToRegExp(pattern: string): RegExp {
+  let out = "";
+  for (let i = 0; i < pattern.length; i++) {
+    const char = pattern[i];
+    if (char === "*") {
+      out += ".*";
+      continue;
+    }
+    if (char === "?") {
+      out += ".";
+      continue;
+    }
+    if (char === "[") {
+      const close = pattern.indexOf("]", i + 1);
+      if (close !== -1) {
+        const set = pattern.slice(i + 1, close).replace(/\\/g, "\\\\");
+        // fnmatch spells negation "!", a regex spells it "^".
+        out += `[${set.startsWith("!") ? `^${set.slice(1)}` : set}]`;
+        i = close;
+        continue;
+      }
+      // An unclosed "[" is a literal, in fnmatch too.
+    }
+    out += char.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp(`^${out}$`, "i");
+}
+
+// A row with no filename passes, exactly as it does in matching.py.
+function filenameMatches(
+  row: Record<string, unknown>,
+  pattern: unknown,
+): boolean {
+  if (typeof pattern !== "string" || pattern === "") return true;
+  const name = row.original_file_name;
+  if (typeof name !== "string") return true;
+  return globToRegExp(pattern).test(name);
 }
 
 function actionBody(
@@ -171,9 +386,9 @@ function actionBody(
   };
 }
 
-async function preflight(client: PaperlessClient): Promise<void> {
+async function preflight(client: PaperlessClient): Promise<UiSettings> {
   const settings = await client.uiSettings();
-  if (settings.isSuperuser) return;
+  if (settings.isSuperuser) return settings;
   const required = ["add_workflow", "change_workflow"];
   const missing = required.filter(
     (permission) => !settings.permissions.includes(permission),
@@ -186,6 +401,7 @@ async function preflight(client: PaperlessClient): Promise<void> {
       { category: "permission" },
     );
   }
+  return settings;
 }
 
 // A stable, non-secret discriminator so two triggers on the same paperless do
@@ -281,7 +497,10 @@ export function createDocumentTrigger(options: DocumentTriggerOptions) {
       const client = clientFor(context.auth, context.store as StoreLike);
       const { endpoint, token } = splitWebhookUrl(context.webhookUrl);
       assertUsableUrl(endpoint);
-      await preflight(client);
+      const settings = await preflight(client);
+      // preflight's ui_settings call has already negotiated, so this is the
+      // version the registration is about to be serialized against.
+      const apiVersion = await client.apiVersion();
 
       const props = context.propsValue as Record<string, unknown>;
       const existing = readRegistration(await context.store.get(STORE_KEY));
@@ -298,7 +517,7 @@ export function createDocumentTrigger(options: DocumentTriggerOptions) {
         triggers: [
           {
             ...(registration?.trigger_id ? { id: registration.trigger_id } : {}),
-            ...triggerBody(options.type, props),
+            ...triggerBody(options.type, props, apiVersion, settings.serverVersion),
           },
         ],
         actions: [
@@ -405,7 +624,7 @@ export function createDocumentTrigger(options: DocumentTriggerOptions) {
     // webhook alone would lose events silently.
     async run(context) {
       const client = clientFor(context.auth, context.store as StoreLike);
-      const props = context.propsValue as { include_content?: boolean };
+      const props = context.propsValue as Record<string, unknown>;
       const includeContent = props.include_content === true;
       const payload = context.payload as WebhookPayload | undefined;
       const docId = readDocId(payload);
@@ -424,6 +643,7 @@ export function createDocumentTrigger(options: DocumentTriggerOptions) {
         [`${options.cursorField}__gt`]: cursor,
         ordering: options.cursorField,
         page_size: 100,
+        ...sweepFilters(props),
       };
       const rows = await client.listAll<Record<string, unknown>>(
         "documents/",
@@ -441,7 +661,9 @@ export function createDocumentTrigger(options: DocumentTriggerOptions) {
         return Date.parse(value) > Date.parse(latest) ? value : latest;
       }, cursor);
       await context.store.put(CURSOR_KEY, newest);
-      return rows.map((row) => emit(row, options.event, includeContent));
+      return rows
+        .filter((row) => filenameMatches(row, props.filter_filename))
+        .map((row) => emit(row, options.event, includeContent));
     },
 
     // Design-time sample: the newest document, shaped exactly as a delivery.

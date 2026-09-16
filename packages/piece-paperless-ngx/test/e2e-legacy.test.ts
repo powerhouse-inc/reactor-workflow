@@ -11,7 +11,8 @@ import { customApiCall } from "../src/lib/actions/custom-api-call";
 import { getTask } from "../src/lib/actions/get-task";
 import { uploadDocument } from "../src/lib/actions/upload-document";
 import { checkPaperlessConnection } from "../src/lib/auth";
-import { MemoryStore, runAction } from "./helpers";
+import { newDocument } from "../src/lib/triggers/document-trigger";
+import { MemoryStore, runAction, runHook } from "./helpers";
 
 const baseUrl = process.env.PAPERLESS_LEGACY_E2E_URL;
 const username = process.env.PAPERLESS_E2E_USER ?? "admin";
@@ -98,4 +99,63 @@ describe.skipIf(!baseUrl)("live paperless-ngx 2.18", () => {
     expect(task.raw).toHaveProperty("related_document");
     expect(task.raw).not.toHaveProperty("related_document_ids");
   }, 420_000);
+
+  // The reason the trigger asks what version it is talking to. 3.0 renamed
+  // these filters, and DRF drops a field it does not know without a word — so
+  // the 3.x spelling registers a trigger that fires on every document, and
+  // nothing anywhere says so. This asserts what paperless kept.
+  it("registers the document-type filter under the name 2.18 understands", async () => {
+    const auth = await authFor();
+    const store = new MemoryStore();
+
+    const created = (await runAction(customApiCall, {
+      auth,
+      props: {
+        method: "POST",
+        path: "document_types/",
+        body: { name: `legacy-type-${stamp}`, matching_algorithm: 0 },
+      },
+    })) as { body: { id: number } };
+    const typeId = created.body.id;
+
+    try {
+      await runHook(newDocument, "onEnable", {
+        auth,
+        store,
+        webhookUrl: `https://example.invalid/hook/${stamp}#tok-${stamp}`,
+        props: { filter_has_any_document_types: [typeId] },
+      });
+
+      const registration = store.entries.get(
+        "paperless:webhook-registration",
+      ) as { workflow_id: number };
+      const workflow = (await runAction(customApiCall, {
+        auth,
+        props: { method: "GET", path: `workflows/${registration.workflow_id}/` },
+      })) as { body: { triggers: Record<string, unknown>[] } };
+
+      const trigger = workflow.body.triggers[0];
+      expect(trigger.filter_has_document_type).toBe(typeId);
+      expect(trigger).not.toHaveProperty("filter_has_any_document_types");
+    } finally {
+      await runHook(newDocument, "onDisable", { auth, store });
+      await runAction(customApiCall, {
+        auth,
+        props: { method: "DELETE", path: `document_types/${typeId}/` },
+      });
+    }
+  }, 60_000);
+
+  it("refuses a filter 2.18 cannot express, rather than dropping it", async () => {
+    const auth = await authFor();
+
+    await expect(
+      runHook(newDocument, "onEnable", {
+        auth,
+        store: new MemoryStore(),
+        webhookUrl: `https://example.invalid/hook/${stamp}-b#tok-${stamp}`,
+        props: { filter_has_any_storage_paths: [1] },
+      }),
+    ).rejects.toThrow(/"Storage path is any of".*3\.0/s);
+  }, 60_000);
 });

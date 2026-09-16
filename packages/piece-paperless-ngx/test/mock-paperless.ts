@@ -478,6 +478,64 @@ export class MockPaperless {
           (row) => Date.parse(row.modified) > Date.parse(modifiedAfter),
         );
       }
+      // django-filter's `in` lookups and paperless's own ObjectFilter both
+      // split ONE comma-joined value; repeated params would leave Django
+      // reading only the last. A value that is not all integers makes
+      // ObjectFilter hand the queryset back untouched — which is how a filter
+      // silently stops filtering.
+      const idsOf = (param: string): number[] | undefined => {
+        const raw = request.query[param]?.[0];
+        if (raw === undefined || raw === "") return undefined;
+        const ids = raw.split(",").map((entry) => Number(entry));
+        return ids.every((entry) => Number.isInteger(entry)) ? ids : undefined;
+      };
+      const objectFilters: [
+        string,
+        (row: MockDocument, ids: number[]) => boolean,
+      ][] = [
+        [
+          "document_type__id__in",
+          (row, ids) =>
+            row.document_type !== null && ids.includes(row.document_type),
+        ],
+        [
+          "document_type__id__none",
+          (row, ids) =>
+            row.document_type === null || !ids.includes(row.document_type),
+        ],
+        [
+          "correspondent__id__in",
+          (row, ids) =>
+            row.correspondent !== null && ids.includes(row.correspondent),
+        ],
+        [
+          "correspondent__id__none",
+          (row, ids) =>
+            row.correspondent === null || !ids.includes(row.correspondent),
+        ],
+        [
+          "storage_path__id__in",
+          (row, ids) =>
+            row.storage_path !== null && ids.includes(row.storage_path),
+        ],
+        [
+          "storage_path__id__none",
+          (row, ids) =>
+            row.storage_path === null || !ids.includes(row.storage_path),
+        ],
+        ["tags__id__in", (row, ids) => row.tags.some((tag) => ids.includes(tag))],
+        ["tags__id__all", (row, ids) => ids.every((id) => row.tags.includes(id))],
+        [
+          "tags__id__none",
+          (row, ids) => !row.tags.some((tag) => ids.includes(tag)),
+        ],
+      ];
+      for (const [param, matches] of objectFilters) {
+        const ids = idsOf(param);
+        if (ids === undefined) continue;
+        rows = rows.filter((row) => matches(row, ids));
+      }
+
       const titleContains = request.query.title__icontains?.[0];
       if (titleContains) {
         rows = rows.filter((row) =>
