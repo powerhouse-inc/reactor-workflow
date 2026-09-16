@@ -244,8 +244,8 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
       umh-production-ledger:
-        specifier: link:../../../umh-production-ledger
-        version: link:../../../umh-production-ledger
+        specifier: https://registry.dev.vetra.io/umh-production-ledger/-/umh-production-ledger-0.0.8.tgz
+        version: https://registry.dev.vetra.io/umh-production-ledger/-/umh-production-ledger-0.0.8.tgz(267938bcd0b55fc9189bad935c66f0c0)
       vite:
         specifier: ^8.0.10
         version: 8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(yaml@2.9.0)
@@ -326,6 +326,15 @@ packages:
   '@ai-sdk/provider@4.0.8':
     resolution: {integrity: sha512-aWO7iwhFUGf347tCwNGggggfmZigaSu7TF739IZSrWWABUp7zkb4Cr3fMqvBe5EIS7ABJJu3Cadn0g/zs1G0QQ==}
     engines: {node: '>=22'}
+
+  '@anthropic-ai/sdk@0.118.0':
+    resolution: {integrity: sha512-X7XY3KLn3lQO6mizN9EKxlW1xTjv6n0BWMPf/rIO/DZ1XXPGzIwqsHf/g4DRbpV/0HafNKcomyoXJUXk85NNEQ==}
+    hasBin: true
+    peerDependencies:
+      zod: ^3.25.0 || ^4.0.0
+    peerDependenciesMeta:
+      zod:
+        optional: true
 
   '@apideck/better-ajv-errors@0.3.7':
     resolution: {integrity: sha512-TajUJwGWbDwkCx/CZi7tRE8PVB7simCvKJfHUsSdvps+aTM/PDPP4gkLmKnc+x3CE//y9i/nj74GqdL/hwk7Iw==}
@@ -3188,6 +3197,9 @@ packages:
       vite:
         optional: true
 
+  '@powerhousedao/reactor-attachments@6.2.2':
+    resolution: {integrity: sha512-BSGwxKTh53gBU37fqTSAbHR2sH+XYXDIAI5qh6eJ8GIkw0h0/cPrcf04qpVbbjnXFRdI4IF5dbTMkFpV2kIEfw==}
+
   '@powerhousedao/reactor-attachments@6.2.3-dev.8':
     resolution: {integrity: sha512-nZiXrAnwdJVzN+Zh8ulrEBj2yQ5IrsGAgbAddoTE8VYHS8/khAYBqefglSvUU6qqijkHrSxhLG2VWV1jRcgBYw==}
 
@@ -3209,8 +3221,22 @@ packages:
     resolution: {integrity: sha512-HmxyheFECqzImvF9cQS/Q+nhwzMpElVORN0fIUBjE3g+uJoSl2l0REJsziVNLcoYTGfVatgJU2oqHzO8zOxhjQ==}
     hasBin: true
 
+  '@powerhousedao/reactor@6.2.2':
+    resolution: {integrity: sha512-aCJo5SxTEMD5FPnz37zM92MWaPW/NrVmCGea3tBaL3K3mp4hv9Xqa9iB4cUhiCfRYo+9stZn2AYOKxqAxbKWWw==}
+
   '@powerhousedao/reactor@6.2.3-dev.8':
     resolution: {integrity: sha512-5knVtzY4cZLAxQIKnsT39dGqSvlNlS6th2Rz7FMUqX94RffN5ZnBvOeceVjWRpOzMB/+moSTPk/0STX46iTEcg==}
+
+  '@powerhousedao/shared@6.2.2':
+    resolution: {integrity: sha512-X/dtw55SSScBvMgm9s2/NSjN8Ne091sbQ0OKcOrN7W2iKQuEBxtzAWLpJuhRoKopWTLTxzMqi7O7Ht4URq8hHw==}
+    peerDependencies:
+      '@sentry/node-core': ^10.52.0
+      rolldown: 1.0.0-rc.8
+    peerDependenciesMeta:
+      '@sentry/node-core':
+        optional: true
+      rolldown:
+        optional: true
 
   '@powerhousedao/shared@6.2.3-dev.8':
     resolution: {integrity: sha512-wnHGeqsomoTlpFIZyX+r3Q2SOlivQxgkczq8+xvIgK9590/qxBFAepK/w9zZ0QQuTOJ4GjIIYDa1Yelo3IM4Rw==}
@@ -5094,6 +5120,9 @@ packages:
     resolution: {integrity: sha512-f0tAdqwM2aL6CiFbIgt9h5zKFp+mgY/iNGwoxPMTj9VSTeQj7d1GGSmWhZw0XWoZ4N/1tnKTKmYFq+Dyq08jRw==}
     engines: {node: '>=22'}
 
+  '@stablelib/base64@1.0.1':
+    resolution: {integrity: sha512-1bnPQqSxSuc3Ii6MhBysoWCg58j97aUjuCSZrGSmDxNqtytIi0k8utUenAwTZN4V5mXXYGsVUI9zeBqy+jBOSQ==}
+
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
@@ -6710,6 +6739,9 @@ packages:
     resolution: {integrity: sha512-WkrWp9GR4KXfKGYzOLmTuGVi1UWFfws377n9cc55/tb6DuqyF6pcQ5AbiHEshaDpY9v6oaSr2XCDidGmMwdzIA==}
     engines: {node: '>=8'}
 
+  document-model@6.2.2:
+    resolution: {integrity: sha512-8f/V4aj3f9xaJaTjp2FuR73TQJ79G3WZddmzHECL7NaW06eVN2x/KBfQGJA8gfhLPfYSuqmvQ7G6hMmX1r1ROg==}
+
   document-model@6.2.3-dev.8:
     resolution: {integrity: sha512-rFa7GTlZdPbERRiMsUfMB2wzmlBjdbt742dFJO1i7w6zoc9CscwvIaj6nNyQJST9hnnSWBR5tNJ9NzP+FTZHZQ==}
 
@@ -7146,6 +7178,9 @@ packages:
 
   fast-safe-stringify@2.1.1:
     resolution: {integrity: sha512-W+KJc2dmILlPplD/H4K9l9LcAHAfPtP6BY84uVLXQ6Evcz9Lcg33Y2z1IVblT6xdY54PXYVHEv+0Wpq8Io6zkA==}
+
+  fast-sha256@1.3.0:
+    resolution: {integrity: sha512-n11RGP/lrWEFI/bWdygLxhI+pVeo1ZYIVwvvPkW7azl/rOy+F3HYRZ2K5zeE9mmkhQppyv9sQFx0JM9UabnpPQ==}
 
   fast-uri@3.1.6:
     resolution: {integrity: sha512-7Ical1vFEMr0onbVzEDIreM22I4khW+fzyQPwvAFWBp1iwdshSZRsL4jjRvPG9JP1uiqMHRto+YU6R2/CzDz5Q==}
@@ -7616,6 +7651,9 @@ packages:
     resolution: {integrity: sha512-hsBTNUqQTDwkWtcdYI2i06Y/nUBEsNEDJKjWdigLvegy8kDuJAS8uRlpkkcQpyEXL0Z/pjDy5HBmMjRCJ2gq+g==}
     engines: {node: '>= 4'}
 
+  immediate@3.0.6:
+    resolution: {integrity: sha512-XXOFtyqDjNDAQxVfYxuF7g9Il/IbWmmlQg2MYKOH8ExIT1qg6xc4zyS3HaEEATgs1btfzxq15ciUiY7gjSXRGQ==}
+
   immutable@5.1.9:
     resolution: {integrity: sha512-m8nVez3rwrgmWxtLMt1ZYXB2Lv7OKYn/disyxAlSDYAlKSlFoPPfIAmAM/M5xqL4m4C/wAPw7S2/CNaUii1Hxg==}
 
@@ -7969,6 +8007,10 @@ packages:
   json-rpc-random-id@1.0.1:
     resolution: {integrity: sha512-RJ9YYNCkhVDBuP4zN5BBtYAzEl03yq/jIIsyif0JY9qyJuQQZNeDK7anAPKKlyEtLSj2s8h6hNh2F8zO5q7ScA==}
 
+  json-schema-to-ts@3.1.1:
+    resolution: {integrity: sha512-+DWg8jCJG2TEnpy7kOm/7/AxaYoaRbjVB4LFZLySZlWn8exGs3A4OLJR966cVvU26N7X9TWxl+Jsw7dzAqKT6g==}
+    engines: {node: '>=16'}
+
   json-schema-traverse@1.0.0:
     resolution: {integrity: sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug==}
 
@@ -7997,6 +8039,9 @@ packages:
   jsonpointer@5.0.1:
     resolution: {integrity: sha512-p/nXbhSEcu3pZRdkW1OfJhpsVtW1gd4Wa1fnQc9YLiTfAjn0312eMKimbdIQzuZl9aa9xUGaRlP9T/CJE/ditQ==}
     engines: {node: '>=0.10.0'}
+
+  jszip@3.10.2:
+    resolution: {integrity: sha512-3l+rb15IOWtUhU0H5MFqES/T6Kh7abYwjosBey/vD6hDt8zoEffkSC5Ws5SGtgVw3gBx2NEbhTeSW1+kWkpyTQ==}
 
   keccak@3.0.4:
     resolution: {integrity: sha512-3vKuW0jV8J3XNTzvfyicFR5qvxrSAGl7KIhvgOu5cmWwM7tZRj3fMbj/pfIf4be7aznbc+prBWGjywox/g2Y6Q==}
@@ -8065,6 +8110,9 @@ packages:
 
   libphonenumber-js@1.13.12:
     resolution: {integrity: sha512-uLVeV1c9OTk6qkdqnj+mpMD+ZdnZ0szVyWu58HwMmpwkHA1gCEkyjd3veZQXDnuw9KEwSRjcc9B1pS9XKIN1fA==}
+
+  lie@3.3.0:
+    resolution: {integrity: sha512-UaiMJzeWRlEujzAuw5LokY1L5ecNQYZKfmyZ9L7wDHb/p5etKaxXhohBcrw0EYby+G/NA52vRSN4N39dxHAIwQ==}
 
   lightningcss-android-arm64@1.32.0:
     resolution: {integrity: sha512-YK7/ClTt4kAK0vo6w3X+Pnm0D2cf2vPHbhOXdoNti1Ga0al1P4TBZhwjATvjNwLEBCnKvjJc2jQgHXH0NEwlAg==}
@@ -8957,6 +9005,9 @@ packages:
   package-manager-detector@1.6.0:
     resolution: {integrity: sha512-61A5ThoTiDG/C8s8UMZwSorAGwMJ0ERVGj2OjoW5pAalsNOg15+iQiPzrLJ4jhZ1HJzmC2PIHT2oEiH3R5fzNA==}
 
+  pako@1.0.11:
+    resolution: {integrity: sha512-4hLB8Py4zZce5s4yd9XzopqwVv/yGNhV1Bl8NTmCq1763HeK2+EwVTv+leGeL13Dnh2wfbqowVPXCIO0z4taYw==}
+
   param-case@3.0.4:
     resolution: {integrity: sha512-RXlj7zCYokReqWpOPH9oYivUzLYZ5vAPIfEmCTNViosC78F8F0H9y7T7gG2M39ymgutxF5gcFEsyZQSph9Bp3A==}
 
@@ -9077,6 +9128,11 @@ packages:
 
   pgpass@1.0.5:
     resolution: {integrity: sha512-FdW9r/jQZhSeohs1Z3sI1yxFQNFvMcnmfuj4WBMUTxOrAyLMaTcE1aAMBiTlbMNaXvBCQuVi0R7hd8udDSP7ug==}
+
+  ph-cmd@6.2.2:
+    resolution: {integrity: sha512-m3BwKNS8k9z145isj5AMyMKflQd1QebXnvmWPLdmR6XKK4AoaCqPhLhJZMv56kmiYypRAj1lGhXDOwESdgybxw==}
+    engines: {node: '>=24.0.0'}
+    hasBin: true
 
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
@@ -9832,6 +9888,9 @@ packages:
     resolution: {integrity: sha512-RJRdvCo6IAnPdsvP/7m6bsQqNnn1FCBX5ZNtFL98MmFF/4xAIJTIg1YbHW5DC2W5SKZanrC6i4HsJqlajw/dZw==}
     engines: {node: '>= 0.4'}
 
+  setimmediate@1.0.5:
+    resolution: {integrity: sha512-MATJdZp8sLqDl/68LfQmbP8zKPLQNV6BIZoIgrscFDQ+RsvK/BxeDQOgyxKKoh0y/8h3BqVFnCqQ/gd+reiIXA==}
+
   setprototypeof@1.2.0:
     resolution: {integrity: sha512-E5LDX7Wrp85Kil5bhZv46j8jOeboKq5JMmYM3gVGdGH8xFpPWXUMsNrlODCrkoxMEeNi/XZIwuRvY4XNwYMJpw==}
 
@@ -10000,6 +10059,9 @@ packages:
 
   stackback@0.0.2:
     resolution: {integrity: sha512-1XMJE5fQo1jGH6Y/7ebnwPOBEkIEnT4QF32d5R1+VXdXveM0IBMJt8zfaxX1P3QhVwrYe+576+jkANtSS2mBbw==}
+
+  standardwebhooks@1.1.1:
+    resolution: {integrity: sha512-bCbX9ZEyFkWPsRz7Bl3NuQUJohmwGSev/yhr7vhaGPlc4AfIrspIRa6cPTBuI1ItmrTDJ4d/S2hCsfe4+vQGnQ==}
 
   statuses@2.0.1:
     resolution: {integrity: sha512-RwNA9Z/7PrK06rYLIzFMlaF+l73iwpzsqRIFgbMLbTcLD6cOao82TaWefPXQvB2fOC4AjuYSEndS7N/mTCbkdQ==}
@@ -10246,6 +10308,9 @@ packages:
   trough@2.2.0:
     resolution: {integrity: sha512-tmMpK00BjZiUyVyvrBK7knerNgmgvcV/KLVyuma/SC+TQN167GrMRciANTz09+k3zW8L8t60jWO1GpfkZdjTaw==}
 
+  ts-algebra@2.0.0:
+    resolution: {integrity: sha512-FPAhNPFMrkwz76P7cdjdmiShwMynZYN6SgOujD1urY4oNm80Ou9oMdmbR45LotcKOXoy7wSmHkRFE6Mxbrhefw==}
+
   ts-graphviz@1.8.2:
     resolution: {integrity: sha512-5YhbFoHmjxa7pgQLkB07MtGnGJ/yhvjmc9uhsnDBEICME6gkPf83SBwLDQqGDoCa3XzUMWLk1AU2Wn1u1naDtA==}
     engines: {node: '>=14.16'}
@@ -10378,6 +10443,19 @@ packages:
 
   uint8arrays@5.1.1:
     resolution: {integrity: sha512-9muQwa4wZG4dKi9gMAIBtnk2Pw87SRpvWTH6lOGm19V2Uqxr4uomUf2PGqPnWc+qs06sN8owUU4jfcoWOcfwVQ==}
+
+  umh-production-ledger@https://registry.dev.vetra.io/umh-production-ledger/-/umh-production-ledger-0.0.8.tgz:
+    resolution: {integrity: sha512-66bMW8T1a6aeSk5ejqiAB+Xr9yKubCCEtdTgIjzDFANyN9I4J/AZA1rKuo9figvCO1xlNC1rFoxFO33QE3yD2A==, tarball: https://registry.dev.vetra.io/umh-production-ledger/-/umh-production-ledger-0.0.8.tgz}
+    version: 0.0.8
+    engines: {node: '>=20'}
+    peerDependencies:
+      '@powerhousedao/reactor-browser': 6.2.2
+      document-model: 6.2.2
+      graphql: ^16
+      graphql-tag: ^2
+      react: ^19
+      react-dom: ^19
+      zod: ^4
 
   unbox-primitive@1.1.0:
     resolution: {integrity: sha512-nWJ91DjeOkej/TA8pXQ3myruKpKEYgqvpw9lz4OPHj/NWFNluYrjbz9j01CJ8yKQd2g4jFoOkINCTW2I5LEEyw==}
@@ -11342,6 +11420,13 @@ snapshots:
   '@ai-sdk/provider@4.0.8':
     dependencies:
       json-schema: 0.4.0
+
+  '@anthropic-ai/sdk@0.118.0(zod@4.3.6)':
+    dependencies:
+      json-schema-to-ts: 3.1.1
+      standardwebhooks: 1.1.1
+    optionalDependencies:
+      zod: 4.3.6
 
   '@apideck/better-ajv-errors@0.3.7(ajv@8.20.0)':
     dependencies:
@@ -15334,6 +15419,29 @@ snapshots:
       - wagmi
       - yaml
 
+  '@powerhousedao/reactor-attachments@6.2.2(@sentry/node-core@10.73.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1)))(@types/react-dom@19.2.5(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(zod@4.3.6)':
+    dependencies:
+      '@aws-sdk/client-s3': 3.1087.0
+      '@aws-sdk/s3-request-presigner': 3.1087.0
+      '@powerhousedao/document-engineering': 1.40.5(@types/react-dom@19.2.5(@types/react@19.2.18))(@types/react@19.2.18)(graphql@16.12.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(zod@4.3.6)
+      '@powerhousedao/reactor': 6.2.2(@sentry/node-core@10.73.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1)))(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      '@powerhousedao/shared': 6.2.2(@sentry/node-core@10.73.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1)))(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      change-case: 5.4.4
+      graphql: 16.12.0
+      kysely: 0.28.16
+    transitivePeerDependencies:
+      - '@sentry/node-core'
+      - '@types/express'
+      - '@types/koa'
+      - '@types/react'
+      - '@types/react-dom'
+      - pg-native
+      - react
+      - react-dom
+      - rolldown
+      - supports-color
+      - zod
+
   '@powerhousedao/reactor-attachments@6.2.3-dev.8(@sentry/node-core@10.73.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1)))(@types/react-dom@19.2.5(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(zod@4.3.6)':
     dependencies:
       '@aws-sdk/client-s3': 3.1087.0
@@ -15505,6 +15613,22 @@ snapshots:
       - ws
       - yaml
 
+  '@powerhousedao/reactor@6.2.2(@sentry/node-core@10.73.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1)))(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))':
+    dependencies:
+      '@electric-sql/pglite': 0.3.15
+      '@powerhousedao/shared': 6.2.2(@sentry/node-core@10.73.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1)))(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      '@sindresorhus/fnv1a': 3.1.0
+      document-model: 6.2.2(@sentry/node-core@10.73.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1)))(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      kysely: 0.28.16
+      kysely-pglite-dialect: 1.2.0(@electric-sql/pglite@0.3.15)(kysely@0.28.16)
+      pg: 8.18.0
+      uuid: 14.0.2
+    transitivePeerDependencies:
+      - '@sentry/node-core'
+      - pg-native
+      - rolldown
+      - supports-color
+
   '@powerhousedao/reactor@6.2.3-dev.8(@sentry/node-core@10.73.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1)))(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))':
     dependencies:
       '@electric-sql/pglite': 0.3.15
@@ -15519,6 +15643,34 @@ snapshots:
       - '@sentry/node-core'
       - pg-native
       - rolldown
+      - supports-color
+
+  '@powerhousedao/shared@6.2.2(@sentry/node-core@10.73.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1)))(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))':
+    dependencies:
+      '@sindresorhus/fnv1a': 3.1.0
+      chalk: 5.6.2
+      change-case: 5.4.4
+      cmd-ts: 0.15.0
+      cross-spawn: 7.0.6
+      dotenv: 16.4.7
+      enquirer: 2.4.1
+      fflate: 0.8.3
+      kysely: 0.28.16
+      luxon: 3.7.2
+      mutative: 1.3.0
+      npm-package-arg: 13.0.2
+      package-directory: 8.2.0
+      package-manager-detector: 1.6.0
+      remeda: 2.33.7
+      safe-stable-stringify: 2.5.0
+      sha1-uint8array: 0.10.7
+      write-package: 7.2.0
+      zocker: 3.0.0(zod@4.3.6)
+      zod: 4.3.6
+    optionalDependencies:
+      '@sentry/node-core': 10.73.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))
+      rolldown: 1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)
+    transitivePeerDependencies:
       - supports-color
 
   '@powerhousedao/shared@6.2.3-dev.8(@sentry/node-core@10.73.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1)))(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))':
@@ -18205,6 +18357,8 @@ snapshots:
     dependencies:
       '@wallet-standard/base': 1.1.1
       '@wallet-standard/features': 1.1.1
+
+  '@stablelib/base64@1.0.1': {}
 
   '@standard-schema/spec@1.1.0': {}
 
@@ -21162,6 +21316,15 @@ snapshots:
     dependencies:
       path-type: 4.0.0
 
+  document-model@6.2.2(@sentry/node-core@10.73.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1)))(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)):
+    dependencies:
+      '@powerhousedao/shared': 6.2.2(@sentry/node-core@10.73.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1)))(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      jszip: 3.10.2
+    transitivePeerDependencies:
+      - '@sentry/node-core'
+      - rolldown
+      - supports-color
+
   document-model@6.2.3-dev.8(@sentry/node-core@10.73.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1)))(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)):
     dependencies:
       '@powerhousedao/shared': 6.2.3-dev.8(@sentry/node-core@10.73.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1)))(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
@@ -21754,6 +21917,8 @@ snapshots:
 
   fast-safe-stringify@2.1.1: {}
 
+  fast-sha256@1.3.0: {}
+
   fast-uri@3.1.6: {}
 
   fastest-levenshtein@1.0.16: {}
@@ -22274,6 +22439,8 @@ snapshots:
 
   ignore@5.3.2: {}
 
+  immediate@3.0.6: {}
+
   immutable@5.1.9: {}
 
   import-fresh@3.3.1:
@@ -22597,6 +22764,11 @@ snapshots:
 
   json-rpc-random-id@1.0.1: {}
 
+  json-schema-to-ts@3.1.1:
+    dependencies:
+      '@babel/runtime': 7.29.7
+      ts-algebra: 2.0.0
+
   json-schema-traverse@1.0.0: {}
 
   json-schema-typed@8.0.2: {}
@@ -22619,6 +22791,13 @@ snapshots:
   jsonparse@1.3.1: {}
 
   jsonpointer@5.0.1: {}
+
+  jszip@3.10.2:
+    dependencies:
+      lie: 3.3.0
+      pako: 1.0.11
+      readable-stream: 2.3.8
+      setimmediate: 1.0.5
 
   keccak@3.0.4:
     dependencies:
@@ -22676,6 +22855,10 @@ snapshots:
   leven@3.1.0: {}
 
   libphonenumber-js@1.13.12: {}
+
+  lie@3.3.0:
+    dependencies:
+      immediate: 3.0.6
 
   lightningcss-android-arm64@1.32.0:
     optional: true
@@ -23821,6 +24004,8 @@ snapshots:
 
   package-manager-detector@1.6.0: {}
 
+  pako@1.0.11: {}
+
   param-case@3.0.4:
     dependencies:
       dot-case: 3.0.4
@@ -23945,6 +24130,26 @@ snapshots:
   pgpass@1.0.5:
     dependencies:
       split2: 4.2.0
+
+  ph-cmd@6.2.2(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)):
+    dependencies:
+      '@powerhousedao/shared': 6.2.2(@sentry/node-core@10.73.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1)))(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      '@sentry/node-core': 10.73.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))
+      chalk: 5.6.2
+      cmd-ts: 0.15.0
+      cross-spawn: 7.0.6
+      package-manager-detector: 1.6.0
+      read-pkg: 10.1.0
+      semver: 7.7.4
+      write-package: 7.2.0
+    transitivePeerDependencies:
+      - '@opentelemetry/api'
+      - '@opentelemetry/core'
+      - '@opentelemetry/exporter-trace-otlp-http'
+      - '@opentelemetry/instrumentation'
+      - '@opentelemetry/sdk-trace-base'
+      - rolldown
+      - supports-color
 
   picocolors@1.1.1: {}
 
@@ -24916,6 +25121,8 @@ snapshots:
       es-errors: 1.3.0
       es-object-atoms: 1.1.2
 
+  setimmediate@1.0.5: {}
+
   setprototypeof@1.2.0: {}
 
   sha.js@2.4.12:
@@ -25097,6 +25304,11 @@ snapshots:
       minipass: 7.1.3
 
   stackback@0.0.2: {}
+
+  standardwebhooks@1.1.1:
+    dependencies:
+      '@stablelib/base64': 1.0.1
+      fast-sha256: 1.3.0
 
   statuses@2.0.1: {}
 
@@ -25333,6 +25545,8 @@ snapshots:
 
   trough@2.2.0: {}
 
+  ts-algebra@2.0.0: {}
+
   ts-graphviz@1.8.2: {}
 
   ts-log@2.2.7: {}
@@ -25467,6 +25681,33 @@ snapshots:
   uint8arrays@5.1.1:
     dependencies:
       multiformats: 13.4.2
+
+  umh-production-ledger@https://registry.dev.vetra.io/umh-production-ledger/-/umh-production-ledger-0.0.8.tgz(267938bcd0b55fc9189bad935c66f0c0):
+    dependencies:
+      '@anthropic-ai/sdk': 0.118.0(zod@4.3.6)
+      '@powerhousedao/reactor-attachments': 6.2.2(@sentry/node-core@10.73.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1)))(@types/react-dom@19.2.5(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(zod@4.3.6)
+      '@powerhousedao/reactor-browser': 6.2.3-dev.8(41acaafa64944558c8b7b2294189121c)
+      document-model: 6.2.3-dev.8(@sentry/node-core@10.73.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1)))(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      graphql: 16.12.0
+      graphql-tag: 2.12.6(graphql@16.12.0)
+      ph-cmd: 6.2.2(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      react: 19.2.6
+      react-dom: 19.2.6(react@19.2.6)
+      zod: 4.3.6
+    transitivePeerDependencies:
+      - '@opentelemetry/api'
+      - '@opentelemetry/core'
+      - '@opentelemetry/exporter-trace-otlp-http'
+      - '@opentelemetry/instrumentation'
+      - '@opentelemetry/sdk-trace-base'
+      - '@sentry/node-core'
+      - '@types/express'
+      - '@types/koa'
+      - '@types/react'
+      - '@types/react-dom'
+      - pg-native
+      - rolldown
+      - supports-color
 
   unbox-primitive@1.1.0:
     dependencies:

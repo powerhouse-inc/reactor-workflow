@@ -111,7 +111,7 @@
     "react-dom": "19.2.6",
     "tailwindcss": "^4.1.16",
     "typescript": "^5.9.3",
-    "umh-production-ledger": "link:../../../umh-production-ledger",
+    "umh-production-ledger": "https://registry.dev.vetra.io/umh-production-ledger/-/umh-production-ledger-0.0.8.tgz",
     "vite": "^8.0.10",
     "vite-tsconfig-paths": "6.1.1",
     "vitest": "4.1.1",
