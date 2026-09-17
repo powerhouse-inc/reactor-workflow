@@ -4,17 +4,17 @@
 // real against the mock and its actual output keys are matched against the
 // field list that claims to describe them.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { bulkEditDocuments } from "../src/lib/actions/bulk-edit-documents";
-import { customApiCall } from "../src/lib/actions/custom-api-call";
-import { findOrCreateObject } from "../src/lib/actions/find-or-create-object";
-import { getDocument } from "../src/lib/actions/get-document";
-import { getDocumentFile } from "../src/lib/actions/get-document-file";
-import { getTask } from "../src/lib/actions/get-task";
-import { searchDocuments } from "../src/lib/actions/search-documents";
-import { updateDocument } from "../src/lib/actions/update-document";
-import { uploadDocument } from "../src/lib/actions/upload-document";
-import { documentUpdated, newDocument } from "../src/lib/triggers/document-trigger";
-import type { OutputField } from "../src/lib/common/output-schemas";
+import { bulkEditDocuments } from "../pieces/paperless-ngx/lib/actions/bulk-edit-documents";
+import { customApiCall } from "../pieces/paperless-ngx/lib/actions/custom-api-call";
+import { findOrCreateObject } from "../pieces/paperless-ngx/lib/actions/find-or-create-object";
+import { getDocument } from "../pieces/paperless-ngx/lib/actions/get-document";
+import { getDocumentFile } from "../pieces/paperless-ngx/lib/actions/get-document-file";
+import { getTask } from "../pieces/paperless-ngx/lib/actions/get-task";
+import { searchDocuments } from "../pieces/paperless-ngx/lib/actions/search-documents";
+import { updateDocument } from "../pieces/paperless-ngx/lib/actions/update-document";
+import { uploadDocument } from "../pieces/paperless-ngx/lib/actions/upload-document";
+import { documentUpdated, newDocument } from "../pieces/paperless-ngx/lib/triggers/document-trigger";
+import type { OutputField } from "../pieces/paperless-ngx/lib/common/output-schemas";
 import type { MockPaperless } from "./mock-paperless";
 import { startMockPaperless } from "./mock-paperless";
 import { authFor, runAction } from "./helpers";

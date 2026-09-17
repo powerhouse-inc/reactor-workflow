@@ -2,12 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   normalizeBaseUrl,
   readAuth,
-} from "../src/lib/common/auth-value";
-import { PaperlessApiError } from "../src/lib/common/errors";
+} from "../pieces/paperless-ngx/lib/common/auth-value";
+import { PaperlessApiError } from "../pieces/paperless-ngx/lib/common/errors";
 import {
   PaperlessClient,
   type VersionCache,
-} from "../src/lib/common/client";
+} from "../pieces/paperless-ngx/lib/common/client";
 import type { MockPaperless } from "./mock-paperless";
 import { startMockPaperless } from "./mock-paperless";
 

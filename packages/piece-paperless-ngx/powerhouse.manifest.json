@@ -1,0 +1,21 @@
+{
+  "name": "@powerhousedao/piece-paperless-ngx",
+  "description": "Upload, search, tag and react to documents in a self-hosted paperless-ngx archive.",
+  "category": "Documents",
+  "publisher": {
+    "name": "@powerhousedao",
+    "url": "https://github.com/powerhouse-inc/reactor-workflow/tree/main/packages/piece-paperless-ngx"
+  },
+  "documentModels": [],
+  "editors": [],
+  "apps": [],
+  "processors": [],
+  "subgraphs": [],
+  "pieces": [
+    {
+      "id": "@powerhousedao/piece-paperless-ngx",
+      "name": "Paperless-ngx"
+    }
+  ],
+  "config": []
+}

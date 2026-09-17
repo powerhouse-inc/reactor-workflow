@@ -1,76 +1,118 @@
-// Tier-1 conformance (spec D8): our bundle loads and describes through the
-// reactor's real loader/descriptor. The bundle is built on demand — the
-// bundle script is the single source of the tarball format.
-import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, readdirSync, rmSync, statSync } from "node:fs";
+// Tier-1 conformance (spec D8): what the node build emits loads and describes
+// through the reactor's real loader and descriptor, and the registry finds it
+
+// where a reactor looks — the built pieces manifest. `pnpm test` builds first,
+// so the gate reads this run's output rather than a stale one.
+import { copyFile, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { buildDescriptor, loadPieceFromDir } from "@powerhousedao/reactor-workflow/testing";
+import { fileURLToPath } from "node:url";
+import {
+  buildDescriptor,
+  loadPieceFromDir,
+  PieceRegistry,
+} from "@powerhousedao/reactor-workflow/testing";
 import { startMockDocling } from "./mock-docling-serve.js";
 
-const FIX = path.join(tmpdir(), `docling-conform-${process.pid}`);
+const packageRoot = path.dirname(
+  path.dirname(fileURLToPath(import.meta.url)),
+);
+const PIECE = "@powerhousedao/piece-docling";
+const VERSION = "1.0.0";
+const entryPath = path.join(
+  packageRoot,
+  "dist/node/pieces/docling/index.mjs",
+);
 
-function newestMtime(dir: string): number {
-  let newest = 0;
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const p = path.join(dir, entry.name);
-    newest = Math.max(newest, entry.isDirectory() ? newestMtime(p) : statSync(p).mtimeMs);
-  }
-  return newest;
-}
+const ready = existsSync(entryPath);
 
-function builtBundleDir(): string {
-  const dist = path.resolve("dist");
-  const bundle = path.join(dist, "src/index.js");
-  // Rebuild not only when the bundle is absent but when it is STALE: the
-  // newest mtime under src/ or scripts/ postdating the build means a later
-  // edit would otherwise pass falsely against the stale bundle.
-  const stale =
-    !existsSync(bundle) ||
-    Math.max(newestMtime(path.resolve("src")), newestMtime(path.resolve("scripts"))) >
-      statSync(bundle).mtimeMs;
-  if (stale) {
-    execFileSync("node", ["scripts/bundle.mjs"], { cwd: path.resolve(".") });
-  }
-  const dir = path.join(FIX, "bundle");
-  rmSync(dir, { recursive: true, force: true });
-  cpSync(dist, dir, { recursive: true });
+// `loadPieceFromDir` resolves an entry out of a package root and the build
+// emits a bare module, so the gate gives it the root it asks for.
+async function stagePiece(): Promise<string> {
+  const dir = await mkdtemp(path.join(tmpdir(), "docling-conform-"));
+  await copyFile(entryPath, path.join(dir, "index.mjs"));
+  await writeFile(
+    path.join(dir, "package.json"),
+    JSON.stringify({ name: PIECE, version: VERSION, main: "./index.mjs" }),
+  );
   return dir;
 }
 
-describe("bundle conformance (Tier-1)", () => {
+describe.skipIf(!ready)("piece conformance (Tier-1)", () => {
+  let bundleDir = "";
+
+  beforeAll(async () => {
+    bundleDir = await stagePiece();
+  });
+
   it("loads via the reactor duck-typed loader", async () => {
-    const loaded = await loadPieceFromDir(builtBundleDir());
+    const loaded = await loadPieceFromDir(bundleDir);
     expect(loaded.check).toBe("constructor-name");
     expect(loaded.piece.displayName).toBe("Docling");
   });
 
+  it("declares itself where a reactor reads it, with nothing left to install", async () => {
+    const registry = new PieceRegistry();
+    await registry.load(packageRoot);
+    expect(registry.lookup(PIECE)).toMatchObject({
+      name: PIECE,
+      version: VERSION,
+      entryPath,
+    });
+
+    const manifest = JSON.parse(
+      await readFile(
+        path.join(packageRoot, "dist/powerhouse.manifest.json"),
+        "utf8",
+      ),
+    ) as { name: string; pieces: { id: string }[] };
+    expect(manifest.name).toBe(PIECE);
+    expect(manifest.pieces.map((piece) => piece.id)).toEqual([PIECE]);
+
+    // The worker loads this module with nothing installed beside it, so the
+    // framework has to be inlined rather than imported.
+    const built = await readFile(entryPath, "utf8");
+    expect(built).not.toMatch(/from\s+"@powerhousedao\//);
+  });
+
   it("descriptor exposes the CUSTOM_AUTH auth and the health action", async () => {
-    const loaded = await loadPieceFromDir(builtBundleDir());
+    const loaded = await loadPieceFromDir(bundleDir);
     const descriptor = buildDescriptor(loaded.piece, {
-      packageName: "@powerhousedao/piece-docling",
-      version: "1.0.0",
+      packageName: PIECE,
+      version: VERSION,
     });
     expect(descriptor.auth?.type).toBe("CUSTOM_AUTH");
     expect(descriptor.actions.map((a) => a.name)).toContain("health");
   });
 
   it("exposes a checkConnection shim compatible with the reactor subgraph contract", async () => {
-    const loaded = await loadPieceFromDir(builtBundleDir());
-    const check = (loaded.piece as unknown as { checkConnection?: (ctx: unknown) => Promise<unknown> })
-      .checkConnection;
+    const loaded = await loadPieceFromDir(bundleDir);
+    const check = (
+      loaded.piece as unknown as {
+        checkConnection?: (ctx: unknown) => Promise<unknown>;
+      }
+    ).checkConnection;
     expect(typeof check).toBe("function");
     const mock = await startMockDocling({ apiKey: "k-test" });
     try {
       const out = await check!({
-        auth: { type: "CUSTOM_AUTH", props: { base_url: mock.baseUrl, api_key: "k-test" } },
+        auth: {
+          type: "CUSTOM_AUTH",
+          props: { base_url: mock.baseUrl, api_key: "k-test" },
+        },
       });
       // vitest 4.1.1 types the asymmetric matcher factories as `any`; `as
       // unknown` is the minimal silencer (opaque matcher consumed by expect).
-      expect(out).toMatchObject({ name: expect.stringContaining("docling-serve 1.32.0") as unknown });
+      expect(out).toMatchObject({
+        name: expect.stringContaining("docling-serve 1.32.0") as unknown,
+      });
       await expect(
         check!({
-          auth: { type: "CUSTOM_AUTH", props: { base_url: mock.baseUrl, api_key: "bad" } },
+          auth: {
+            type: "CUSTOM_AUTH",
+            props: { base_url: mock.baseUrl, api_key: "bad" },
+          },
         }),
       ).rejects.toThrow();
     } finally {
@@ -79,13 +121,20 @@ describe("bundle conformance (Tier-1)", () => {
   });
 
   it("describes all six actions with their props", async () => {
-    const loaded = await loadPieceFromDir(builtBundleDir());
+    const loaded = await loadPieceFromDir(bundleDir);
     const descriptor = buildDescriptor(loaded.piece, {
-      packageName: "@powerhousedao/piece-docling",
-      version: "1.0.0",
+      packageName: PIECE,
+      version: VERSION,
     });
     const names = descriptor.actions.map((a) => a.name).sort();
-    expect(names).toEqual(["chunk", "convert_file", "convert_url", "get_result", "health", "submit_job"]);
+    expect(names).toEqual([
+      "chunk",
+      "convert_file",
+      "convert_url",
+      "get_result",
+      "health",
+      "submit_job",
+    ]);
     type ActionDescriptor = { name: string; props: { name: string }[] };
     const byName = Object.fromEntries(
       descriptor.actions.map(

@@ -1,5 +1,5 @@
-import { normalizeFile } from "../src/lib/files.js";
-import { DoclingError } from "../src/lib/errors.js";
+import { normalizeFile } from "../pieces/docling/lib/files.js";
+import { DoclingError } from "../pieces/docling/lib/errors.js";
 
 describe("normalizeFile", () => {
   it("handles a real ApFile (Buffer data)", () => {

@@ -7,11 +7,11 @@
 //   PAPERLESS_LEGACY_E2E_URL=http://localhost:18001 \
 //   pnpm vitest run test/e2e-legacy.test.ts
 import { describe, expect, it } from "vitest";
-import { customApiCall } from "../src/lib/actions/custom-api-call";
-import { getTask } from "../src/lib/actions/get-task";
-import { uploadDocument } from "../src/lib/actions/upload-document";
-import { checkPaperlessConnection } from "../src/lib/auth";
-import { newDocument } from "../src/lib/triggers/document-trigger";
+import { customApiCall } from "../pieces/paperless-ngx/lib/actions/custom-api-call";
+import { getTask } from "../pieces/paperless-ngx/lib/actions/get-task";
+import { uploadDocument } from "../pieces/paperless-ngx/lib/actions/upload-document";
+import { checkPaperlessConnection } from "../pieces/paperless-ngx/lib/auth";
+import { newDocument } from "../pieces/paperless-ngx/lib/triggers/document-trigger";
 import { MemoryStore, runAction, runHook } from "./helpers";
 
 const baseUrl = process.env.PAPERLESS_LEGACY_E2E_URL;

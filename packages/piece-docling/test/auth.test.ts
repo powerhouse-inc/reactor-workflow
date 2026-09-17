@@ -1,8 +1,8 @@
-import { doclingAuth, authFromCtx } from "../src/lib/auth.js";
+import { doclingAuth, authFromCtx } from "../pieces/docling/lib/auth.js";
 import { startMockDocling } from "./mock-docling-serve.js";
 import type { MockDocling } from "./mock-docling-serve.js";
-import { healthAction } from "../src/lib/actions/health.js";
-import { convertFileAction } from "../src/lib/actions/convert-file.js";
+import { healthAction } from "../pieces/docling/lib/actions/health.js";
+import { convertFileAction } from "../pieces/docling/lib/actions/convert-file.js";
 import { makeActionContext } from "./mock-context.js";
 import { startMockDocling as startMock2 } from "./mock-docling-serve.js";
 

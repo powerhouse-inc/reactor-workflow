@@ -1,4 +1,4 @@
-import { chunkAction } from "../src/lib/actions/chunk.js";
+import { chunkAction } from "../pieces/docling/lib/actions/chunk.js";
 import { makeActionContext } from "./mock-context.js";
 import { startMockDocling, MOCK_CHUNKS } from "./mock-docling-serve.js";
 

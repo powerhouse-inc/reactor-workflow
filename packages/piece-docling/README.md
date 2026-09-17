@@ -4,8 +4,9 @@ A first-party workflow piece for **docling-serve**: convert documents
 (PDF, DOCX, PPTX, images, HTML, …) to Markdown, docling-document JSON,
 HTML, DocTags, or plain text. Works against a self-hosted docling-serve
 (the demo compose runs the stock CPU image) or a Docling for IBM watsonx
-endpoint, over the **v1 REST API**. Built on the Activepieces piece
-contract and run by the reactor's workflow runtime (see the root README).
+endpoint, over the **v1 REST API**. Written against
+`@powerhousedao/pieces-framework` and run by the workflow runtime in
+`@powerhousedao/reactor-workflow` (see the root README).
 
 | | |
 | --- | --- |
@@ -56,9 +57,16 @@ All conversion actions share the same options block (format, OCR, table
 mode, page range, …); defaults match the stock image's out-of-the-box
 behavior (markdown, OCR on).
 
+## Build
+
+`pnpm build` emits the piece at `dist/node/pieces/docling/index.mjs`
+with the framework inlined, and copies `powerhouse.manifest.json` into
+`dist/`. That module is what `pieces/index.ts` declares and what a
+reactor loads.
+
 ## Tests
 
-- `pnpm test` — unit + conformance suites against the in-process
+- `pnpm test` — builds, then runs the unit + conformance suites against the in-process
   `mock-docling-serve` (v1 route-level key gating, the `files`/`options`/
   `convert_options` contract, status polling, error taxonomy, output
   schemas).

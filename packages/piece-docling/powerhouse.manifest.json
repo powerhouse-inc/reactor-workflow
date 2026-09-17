@@ -1,0 +1,21 @@
+{
+  "name": "@powerhousedao/piece-docling",
+  "description": "Convert documents to Markdown, docling-document JSON, HTML, DocTags and plain text with docling-serve.",
+  "category": "Documents",
+  "publisher": {
+    "name": "@powerhousedao",
+    "url": "https://github.com/powerhouse-inc/reactor-workflow/tree/main/packages/piece-docling"
+  },
+  "documentModels": [],
+  "editors": [],
+  "apps": [],
+  "processors": [],
+  "subgraphs": [],
+  "pieces": [
+    {
+      "id": "@powerhousedao/piece-docling",
+      "name": "Docling"
+    }
+  ],
+  "config": []
+}

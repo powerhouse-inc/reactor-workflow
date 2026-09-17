@@ -2,8 +2,8 @@ import { startMockDocling, type MockDocling } from "./mock-docling-serve.js";
 import {
   runConversion, submitJob, pollTask, fetchResult,
   type DoclingAuth, type ConvertDocumentResponse,
-} from "../src/lib/client.js";
-import { DoclingError } from "../src/lib/errors.js";
+} from "../pieces/docling/lib/client.js";
+import { DoclingError } from "../pieces/docling/lib/errors.js";
 
 const OPTS = { to_formats: ["md"], do_ocr: true, table_mode: "accurate", do_table_structure: true, image_export_mode: "placeholder" } as const;
 

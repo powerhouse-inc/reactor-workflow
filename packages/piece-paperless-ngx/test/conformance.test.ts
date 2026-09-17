@@ -1,58 +1,64 @@
-// Tier-1 conformance: the acceptance gate for the bundle. The published
-// artifact has to load through the reactor's own duck-typed loader, describe
-// into a connector descriptor, and execute an action inside the forked worker
-// — that, not our esbuild config, is the definition of a valid bundle.
-import { cp, mkdtemp, readFile } from "node:fs/promises";
+// Tier-1 conformance: the acceptance gate for the built piece. What the node
+// build emits has to load through the reactor's own duck-typed loader,
+
+// describe into a piece descriptor, and execute an action inside the forked
+// worker — that, not our build config, is the definition of a valid piece.
+import { copyFile, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type * as ReactorConnectors from "@powerhousedao/reactor-workflow/testing";
+import {
+  buildDescriptor,
+  loadPieceFromDir,
+  PieceRegistry,
+  PieceWorker,
+} from "@powerhousedao/reactor-workflow/testing";
+import type { LocalPiece } from "@powerhousedao/reactor-workflow/testing";
 import type { MockPaperless } from "./mock-paperless";
 import { startMockPaperless } from "./mock-paperless";
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-// `dist/` is the tarball root, so the gate loads exactly what npm would ship —
-// the emitted package.json included, rather than one written here to suit.
-const distDir = join(packageRoot, "dist");
-const bundleFile = join(distDir, "src", "index.js");
+const PIECE = "@powerhousedao/piece-paperless-ngx";
+const VERSION = "0.1.0";
+const entryPath = join(
+  packageRoot,
+  "dist",
+  "node",
+  "pieces",
+  "paperless-ngx",
+  "index.mjs",
+);
 
-// The reactor's loader and worker live in the connectors package; a workspace
-// that has not built it yet skips rather than fails.
-type Connectors = typeof ReactorConnectors;
-let connectors: Connectors | undefined;
-try {
-  connectors = await import("@powerhousedao/reactor-workflow/testing");
-} catch {
-  connectors = undefined;
-}
+// A workspace that has not built yet skips rather than fails; `pnpm test`
+// builds first, and so does CI.
+const ready = existsSync(entryPath);
 
-const ready = connectors !== undefined && existsSync(bundleFile);
-
-let cacheDir = "";
+let declared: LocalPiece | undefined;
 let bundleDir = "";
-let published: {
-  name: string;
-  version: string;
-  main: string;
-  dependencies: Record<string, string>;
-  license?: string;
-};
 let mock: MockPaperless;
 
-describe.skipIf(!ready)("bundle conformance", () => {
+// `loadPieceFromDir` resolves an entry out of a package root and the build
+// emits a bare module, so the gate gives it the root it asks for.
+async function stagePiece(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "paperless-conformance-"));
+  await copyFile(entryPath, join(dir, "index.mjs"));
+  await writeFile(
+    join(dir, "package.json"),
+    JSON.stringify({ name: PIECE, version: VERSION, main: "./index.mjs" }),
+  );
+  return dir;
+}
+
+describe.skipIf(!ready)("piece conformance", () => {
   beforeAll(async () => {
-    published = JSON.parse(
-      await readFile(join(distDir, "package.json"), "utf8"),
-    ) as typeof published;
-    cacheDir = await mkdtemp(join(tmpdir(), "paperless-conformance-"));
-    // The layout ensurePieceBundle resolves: <cacheDir>/<name>-<version>.
-    bundleDir = join(
-      cacheDir,
-      `${published.name.replace("/", "-")}-${published.version}`,
-    );
-    await cp(distDir, bundleDir, { recursive: true });
+    // What a reactor does with this package installed: read the pieces it
+    // declares, and resolve each one to a module on disk.
+    const registry = new PieceRegistry();
+    await registry.load(packageRoot);
+    declared = registry.lookup(PIECE);
+    bundleDir = await stagePiece();
     mock = await startMockPaperless();
   }, 60_000);
 
@@ -61,19 +67,20 @@ describe.skipIf(!ready)("bundle conformance", () => {
   });
 
   it("loads through the reactor's duck-typed loader", async () => {
-    const loaded = await connectors!.loadPieceFromDir(bundleDir);
+    const loaded = await loadPieceFromDir(bundleDir);
 
     expect(loaded.check).toBe("constructor-name");
     expect(loaded.piece.displayName).toBe("Paperless-ngx");
-    // keepNames must survive bundling, or the constructor-name check fails.
+    // The loader identifies a piece by its constructor's name, so the build
+    // must not mangle it.
     expect(loaded.piece.constructor.name).toBe("Piece");
   });
 
-  it("describes into a connector descriptor with real props and pickers", async () => {
-    const { piece } = await connectors!.loadPieceFromDir(bundleDir);
-    const descriptor = connectors!.buildDescriptor(piece, {
-      packageName: published.name,
-      version: published.version,
+  it("describes into a piece descriptor with real props and pickers", async () => {
+    const { piece } = await loadPieceFromDir(bundleDir);
+    const descriptor = buildDescriptor(piece, {
+      packageName: PIECE,
+      version: VERSION,
     });
 
     expect(descriptor.actions.map((action) => action.name).sort()).toEqual([
@@ -107,29 +114,34 @@ describe.skipIf(!ready)("bundle conformance", () => {
     const bulk = descriptor.actions.find(
       (action) => action.name === "bulk_edit_documents",
     );
-    expect(
-      bulk?.props.find((prop) => prop.name === "parameters")?.type,
-    ).toBe("DYNAMIC");
+    expect(bulk?.props.find((prop) => prop.name === "parameters")?.type).toBe(
+      "DYNAMIC",
+    );
   });
 
-  it("ships a publishable tarball: no deps, and the i18n data file", async () => {
-    // `npm publish ./dist` reads the emitted manifest, not the workspace one.
-    expect(published.name).toBe("@powerhousedao/piece-paperless-ngx");
-    expect(published.main).toBe("./src/index.js");
-    // Nothing may be left to install: the loader unpacks the tarball alone.
-    expect(published.dependencies).toEqual({});
-    expect(published.license).toBe("AGPL-3.0-only");
+  it("declares itself where a reactor reads it, with nothing left to install", async () => {
+    // The registry found the piece through the built manifest, which is the
+    // only path a reactor takes to it.
+    expect(declared).toMatchObject({ name: PIECE, version: VERSION });
+    expect(declared?.entryPath).toBe(entryPath);
 
-    // The UI reads translations out of the bundle; esbuild cannot see the file
-    // from the entry point, so only the copy step puts it in the tarball.
-    const i18n = JSON.parse(
-      await readFile(join(bundleDir, "src", "i18n", "translation.json"), "utf8"),
-    ) as Record<string, string>;
-    expect(i18n["Paperless-ngx"]).toBe("Paperless-ngx");
+    const manifest = JSON.parse(
+      await readFile(
+        join(packageRoot, "dist", "powerhouse.manifest.json"),
+        "utf8",
+      ),
+    ) as { name: string; pieces: { id: string }[] };
+    expect(manifest.name).toBe(PIECE);
+    expect(manifest.pieces.map((piece) => piece.id)).toEqual([PIECE]);
+
+    // The worker loads this module with nothing installed beside it, so the
+    // framework has to be inlined rather than imported.
+    const built = await readFile(entryPath, "utf8");
+    expect(built).not.toMatch(/from\s+"@powerhousedao\//);
   });
 
   it("produces metadata in the shape the catalog serves", async () => {
-    const { piece } = await connectors!.loadPieceFromDir(bundleDir);
+    const { piece } = await loadPieceFromDir(bundleDir);
     const metadata = (
       piece as unknown as { metadata(): Record<string, unknown> }
     ).metadata();
@@ -144,11 +156,11 @@ describe.skipIf(!ready)("bundle conformance", () => {
   });
 
   it("runs an action inside the forked worker against a live server", async () => {
-    const worker = new connectors!.PieceWorker();
+    const worker = new PieceWorker();
     try {
       const document = mock.seedDocument({ title: "Worker Round Trip" });
       const result = await worker.runAction({
-        bundleDir,
+        entryPath,
         actionName: "get_document",
         propsValue: { id: document.id },
         auth: {
@@ -170,10 +182,10 @@ describe.skipIf(!ready)("bundle conformance", () => {
   }, 60_000);
 
   it("answers check-connection with an account label", async () => {
-    const worker = new connectors!.PieceWorker();
+    const worker = new PieceWorker();
     try {
       const result = await worker.checkConnection({
-        bundleDir,
+        entryPath,
         auth: {
           type: "CUSTOM_AUTH",
           props: { base_url: mock.baseUrl, token: "test-token" },
@@ -192,11 +204,11 @@ describe.skipIf(!ready)("bundle conformance", () => {
   }, 60_000);
 
   it("reports a rejected token as a piece error, not a crash", async () => {
-    const worker = new connectors!.PieceWorker();
+    const worker = new PieceWorker();
     try {
       await expect(
         worker.runAction({
-          bundleDir,
+          entryPath,
           actionName: "get_document",
           propsValue: { id: 1 },
           auth: {

@@ -4,7 +4,7 @@ import {
   documentUpdated,
   newDocument,
   splitWebhookUrl,
-} from "../src/lib/triggers/document-trigger";
+} from "../pieces/paperless-ngx/lib/triggers/document-trigger";
 import type { MockPaperless } from "./mock-paperless";
 import { startMockPaperless } from "./mock-paperless";
 import { authFor, MemoryStore, runHook } from "./helpers";

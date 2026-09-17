@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { checkPaperlessConnection } from "../src/lib/auth";
-import { customApiCall } from "../src/lib/actions/custom-api-call";
-import { getDocument } from "../src/lib/actions/get-document";
-import { getDocumentFile } from "../src/lib/actions/get-document-file";
-import { getTask } from "../src/lib/actions/get-task";
-import { searchDocuments } from "../src/lib/actions/search-documents";
+import { checkPaperlessConnection } from "../pieces/paperless-ngx/lib/auth";
+import { customApiCall } from "../pieces/paperless-ngx/lib/actions/custom-api-call";
+import { getDocument } from "../pieces/paperless-ngx/lib/actions/get-document";
+import { getDocumentFile } from "../pieces/paperless-ngx/lib/actions/get-document-file";
+import { getTask } from "../pieces/paperless-ngx/lib/actions/get-task";
+import { searchDocuments } from "../pieces/paperless-ngx/lib/actions/search-documents";
 import type { MockPaperless } from "./mock-paperless";
 import { startMockPaperless } from "./mock-paperless";
 import {
