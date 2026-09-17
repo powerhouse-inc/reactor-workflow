@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { bulkEditDocuments } from "../src/lib/actions/bulk-edit-documents";
-import { findOrCreateObject } from "../src/lib/actions/find-or-create-object";
-import { updateDocument } from "../src/lib/actions/update-document";
-import { uploadDocument } from "../src/lib/actions/upload-document";
-import { normalizeFile } from "../src/lib/common/files";
+import { bulkEditDocuments } from "../pieces/paperless-ngx/lib/actions/bulk-edit-documents";
+import { findOrCreateObject } from "../pieces/paperless-ngx/lib/actions/find-or-create-object";
+import { updateDocument } from "../pieces/paperless-ngx/lib/actions/update-document";
+import { uploadDocument } from "../pieces/paperless-ngx/lib/actions/upload-document";
+import { normalizeFile } from "../pieces/paperless-ngx/lib/common/files";
 import type { MockPaperless } from "./mock-paperless";
 import { parseMultipart, startMockPaperless } from "./mock-paperless";
 import { authFor, MemoryStore, runAction, waitFor } from "./helpers";

@@ -15,13 +15,13 @@
 // URL sources accept only globally routable hosts (the SSRF gate).
 import { deflateSync } from "node:zlib";
 import { beforeAll, describe, expect, it } from "vitest";
-import { chunkAction } from "../src/lib/actions/chunk.js";
-import { convertFileAction } from "../src/lib/actions/convert-file.js";
-import { convertUrlAction } from "../src/lib/actions/convert-url.js";
-import { getResultAction } from "../src/lib/actions/get-result.js";
-import { healthAction } from "../src/lib/actions/health.js";
-import { submitJobAction } from "../src/lib/actions/submit-job.js";
-import { doclingAuth } from "../src/lib/auth.js";
+import { chunkAction } from "../pieces/docling/lib/actions/chunk.js";
+import { convertFileAction } from "../pieces/docling/lib/actions/convert-file.js";
+import { convertUrlAction } from "../pieces/docling/lib/actions/convert-url.js";
+import { getResultAction } from "../pieces/docling/lib/actions/get-result.js";
+import { healthAction } from "../pieces/docling/lib/actions/health.js";
+import { submitJobAction } from "../pieces/docling/lib/actions/submit-job.js";
+import { doclingAuth } from "../pieces/docling/lib/auth.js";
 import { makeActionContext } from "./mock-context.js";
 
 const baseUrl = process.env.DOCLING_E2E_URL;

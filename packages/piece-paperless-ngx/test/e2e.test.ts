@@ -13,17 +13,17 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { bulkEditDocuments } from "../src/lib/actions/bulk-edit-documents";
-import { customApiCall } from "../src/lib/actions/custom-api-call";
-import { findOrCreateObject } from "../src/lib/actions/find-or-create-object";
-import { getDocument } from "../src/lib/actions/get-document";
-import { getDocumentFile } from "../src/lib/actions/get-document-file";
-import { getTask } from "../src/lib/actions/get-task";
-import { searchDocuments } from "../src/lib/actions/search-documents";
-import { updateDocument } from "../src/lib/actions/update-document";
-import { uploadDocument } from "../src/lib/actions/upload-document";
-import { checkPaperlessConnection } from "../src/lib/auth";
-import { documentUpdated, newDocument } from "../src/lib/triggers/document-trigger";
+import { bulkEditDocuments } from "../pieces/paperless-ngx/lib/actions/bulk-edit-documents";
+import { customApiCall } from "../pieces/paperless-ngx/lib/actions/custom-api-call";
+import { findOrCreateObject } from "../pieces/paperless-ngx/lib/actions/find-or-create-object";
+import { getDocument } from "../pieces/paperless-ngx/lib/actions/get-document";
+import { getDocumentFile } from "../pieces/paperless-ngx/lib/actions/get-document-file";
+import { getTask } from "../pieces/paperless-ngx/lib/actions/get-task";
+import { searchDocuments } from "../pieces/paperless-ngx/lib/actions/search-documents";
+import { updateDocument } from "../pieces/paperless-ngx/lib/actions/update-document";
+import { uploadDocument } from "../pieces/paperless-ngx/lib/actions/upload-document";
+import { checkPaperlessConnection } from "../pieces/paperless-ngx/lib/auth";
+import { documentUpdated, newDocument } from "../pieces/paperless-ngx/lib/triggers/document-trigger";
 import { MemoryStore, RecordingFiles, runAction, runHook } from "./helpers";
 
 const baseUrl = process.env.PAPERLESS_E2E_URL;

@@ -1,8 +1,8 @@
-import { convertFileAction } from "../src/lib/actions/convert-file.js";
+import { convertFileAction } from "../pieces/docling/lib/actions/convert-file.js";
 import { makeActionContext } from "./mock-context.js";
 import { startMockDocling, MOCK_MD } from "./mock-docling-serve.js";
-import { DoclingError } from "../src/lib/errors.js";
-import { convertUrlAction } from "../src/lib/actions/convert-url.js";
+import { DoclingError } from "../pieces/docling/lib/errors.js";
+import { convertUrlAction } from "../pieces/docling/lib/actions/convert-url.js";
 
 function ctx(props: Record<string, unknown>, baseUrl = "http://127.0.0.1:1") {
   return makeActionContext(props, {

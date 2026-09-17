@@ -1,5 +1,5 @@
-import { submitJobAction } from "../src/lib/actions/submit-job.js";
-import { getResultAction } from "../src/lib/actions/get-result.js";
+import { submitJobAction } from "../pieces/docling/lib/actions/submit-job.js";
+import { getResultAction } from "../pieces/docling/lib/actions/get-result.js";
 import { makeActionContext } from "./mock-context.js";
 import { startMockDocling } from "./mock-docling-serve.js";
 

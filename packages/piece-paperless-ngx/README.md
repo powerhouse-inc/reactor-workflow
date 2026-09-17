@@ -1,9 +1,9 @@
 # @powerhousedao/piece-paperless-ngx
 
 A first-party workflow piece for a self-hosted **paperless-ngx** document
-archive: upload, search, read, tag, and react to new documents. Built on
-the Activepieces piece contract and run by the reactor's workflow runtime
-(see the root README).
+archive: upload, search, read, tag, and react to new documents. Written
+against `@powerhousedao/pieces-framework` and run by the workflow runtime
+in `@powerhousedao/reactor-workflow` (see the root README).
 
 | | |
 | --- | --- |
@@ -97,9 +97,16 @@ the loopback address). The trigger **refuses to enable** while the origin
 is unset, so a webhook can never be registered at an address nothing can
 reach.
 
+## Build
+
+`pnpm build` emits the piece at
+`dist/node/pieces/paperless-ngx/index.mjs` with the framework inlined,
+and copies `powerhouse.manifest.json` into `dist/`. That module is what
+`pieces/index.ts` declares and what a reactor loads.
+
 ## Tests
 
-- `pnpm test` — unit/conformance suites against the in-process
+- `pnpm test` — builds, then runs the unit/conformance suites against the in-process
   `mock-paperless` (API v9 pin, status codes, version negotiation,
   webhook registration, output schemas).
 - Live e2e (needs Docker):

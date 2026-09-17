@@ -4,7 +4,7 @@ import {
   getResultOutputFields,
   healthOutputFields,
   jobOutputFields,
-} from "../src/lib/output-schemas.js";
+} from "../pieces/docling/lib/output-schemas.js";
 
 it("convert fields cover the response shape", () => {
   expect(convertOutputFields.map((f) => f.key)).toEqual([

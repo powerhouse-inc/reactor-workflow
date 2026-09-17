@@ -1,5 +1,5 @@
-import { buildOptions, executionMode, timeoutMs } from "../src/lib/options.js";
-import { DoclingError } from "../src/lib/errors.js";
+import { buildOptions, executionMode, timeoutMs } from "../pieces/docling/lib/options.js";
+import { DoclingError } from "../pieces/docling/lib/errors.js";
 
 describe("buildOptions", () => {
   it("maps the format presets to to_formats", () => {
