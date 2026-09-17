@@ -1,10 +1,16 @@
 # Demo: paperless-ngx → docling on the reactor
 
 A self-hosted **paperless-ngx** document archive and a self-hosted
-**docling-serve** conversion server, both wired into the reactor through
+**docling-serve** conversion server, both wired into a reactor through
 this repo's first-party pieces. Upload a document to paperless; a workflow
 picks it up, fetches the file, and converts it to Markdown with docling —
 and you watch the run in the reactor's journal.
+
+The workflow engine no longer lives here — it is
+`@powerhousedao/reactor-workflow` in the
+[powerhouse monorepo](https://github.com/powerhouse-inc/powerhouse), loaded by
+a reactor that sets `workflows.enabled`. This directory is the service stack
+and the credentials; step 3 says how to point a reactor at it.
 
 | Service | URL | Piece |
 | --- | --- | --- |
@@ -39,17 +45,20 @@ it. It defaults to the compose credentials (`admin` /
 `paperless-demo`); if you changed them in the compose file, pass
 `PAPERLESS_USER` and `PAPERLESS_PASSWORD`.
 
-## 3. Start the reactor
+## 3. Start a reactor that has the pieces
 
-From the repo root:
+Any reactor project with the workflow runtime enabled and these two packages
+installed will do — `workflows.enabled: true` in its `powerhouse.config.json`,
+and `@powerhousedao/piece-paperless-ngx` and `@powerhousedao/piece-docling` in
+its `packages` list (until they are published, `pnpm link` them from a build of
+this repo — see the root README). Start it with Connect on :3000 and the
+switchboard on :4001:
 
 ```sh
-PUBLIC_URL=http://localhost:4001 pnpm dev
+PUBLIC_URL=http://localhost:4001 ph vetra
 ```
 
-`pnpm dev` builds `reactor-connectors` and starts Vetra (Connect on
-:3000, switchboard on :4001 — see the root README). The
-`PUBLIC_URL` flag is **required for this demo**: the paperless
+The `PUBLIC_URL` flag is **required for this demo**: the paperless
 piece's webhook trigger registers a delivery endpoint with paperless
 when you enable it, and that endpoint is the switchboard's GraphQL URL
 on the reactor's public origin. The trigger refuses to enable while the
@@ -90,7 +99,7 @@ In the workflow builder, three blocks:
    - everything else at its default: markdown format, OCR on.
 
 Then **enable** the workflow. (Enabling is where the webhook gets
-registered — if it refuses, `PUBLIC_URL` is not set; stop Vetra and
+registered — if it refuses, `PUBLIC_URL` is not set; stop the reactor and
 redo step 3.)
 
 ## 6. Upload a document
@@ -120,7 +129,7 @@ carries the invoice as Markdown — open the run in Connect to read the
 ## Troubleshooting
 
 - **Webhook trigger refuses to enable** — `PUBLIC_URL` was not set
-  when Vetra started (step 3). It must be the origin the switchboard
+  when the reactor started (step 3). It must be the origin the switchboard
   actually serves on and that paperless can reach: `http://localhost:4001`
   for this layout.
 - **Deliveries never arrive** — paperless can only reach the switchboard

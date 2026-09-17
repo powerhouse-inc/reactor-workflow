@@ -30,7 +30,7 @@
     "@activepieces/shared": "0.95.1"
   },
   "devDependencies": {
-    "@powerhousedao/reactor-connectors": "workspace:*",
+    "@powerhousedao/reactor-workflow": "6.2.3-dev.12",
     "@types/node": "^24.13.3",
     "esbuild": "0.25.12",
     "oxlint": "1.70.0",
