@@ -1,9 +1,6 @@
 packages:
   - "packages/*"
-  # The demo is a workspace package for one reason: its workflow graph is
-  # tested against the engine (demo-umh/test), which needs the connectors
-  # package as a dependency.
-  - "demo-umh"
+
 allowBuilds:
   '@apollo/protobufjs': false
   '@datadog/pprof': false
@@ -14,34 +11,9 @@ allowBuilds:
   keccak: false
   protobufjs: false
   utf-8-validate: false
+# The Powerhouse packages publish under the `dev` tag several times a day, so
+# a release-age floor would make every one of them unresolvable.
 minimumReleaseAgeExclude:
   - '@powerhousedao/*'
   - '@renown/*'
   - document-model
-  - '@powerhousedao/analytics-engine-browser@6.2.2-dev.72'
-  - '@powerhousedao/analytics-engine-core@6.2.2-dev.72'
-  - '@powerhousedao/analytics-engine-graphql@6.2.2-dev.72'
-  - '@powerhousedao/analytics-engine-knex@6.2.2-dev.72'
-  - '@powerhousedao/analytics-engine-pg@6.2.2-dev.72'
-  - '@powerhousedao/builder-tools@6.2.2-dev.72'
-  - '@powerhousedao/codegen@6.2.2-dev.72'
-  - '@powerhousedao/common@6.2.2-dev.72'
-  - '@powerhousedao/config@6.2.2-dev.72'
-  - '@powerhousedao/connect@6.2.2-dev.72'
-  - '@powerhousedao/design-system@6.2.2-dev.72'
-  - '@powerhousedao/opentelemetry-instrumentation-reactor@6.2.2-dev.72'
-  - '@powerhousedao/pglite-fs@6.2.2-dev.72'
-  - '@powerhousedao/ph-cli@6.2.2-dev.72'
-  - '@powerhousedao/powerhouse-vetra-packages@6.2.2-dev.72'
-  - '@powerhousedao/reactor-api@6.2.2-dev.72'
-  - '@powerhousedao/reactor-attachments@6.2.2-dev.72'
-  - '@powerhousedao/reactor-browser@6.2.2-dev.72'
-  - '@powerhousedao/reactor-drive@6.2.2-dev.72'
-  - '@powerhousedao/reactor-group@6.2.2-dev.72'
-  - '@powerhousedao/reactor-mcp@6.2.2-dev.72'
-  - '@powerhousedao/reactor@6.2.2-dev.72'
-  - '@powerhousedao/shared@6.2.2-dev.72'
-  - '@powerhousedao/switchboard@6.2.2-dev.72'
-  - '@powerhousedao/vetra@6.2.2-dev.72'
-  - '@renown/sdk@6.2.2-dev.72'
-  - document-model@6.2.2-dev.72

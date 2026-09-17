@@ -18,7 +18,7 @@
     "zod": "4.3.6"
   },
   "devDependencies": {
-    "@powerhousedao/reactor-connectors": "workspace:*",
+    "@powerhousedao/reactor-workflow": "6.2.3-dev.12",
     "@types/node": "^24.13.3",
     "esbuild": "0.28.2",
     "oxlint": "1.70.0",

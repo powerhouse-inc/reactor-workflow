@@ -2,9 +2,9 @@
   "name": "reactor-workflow",
   "version": "0.0.0",
   "private": true,
+  "description": "Powerhouse's first-party Activepieces pieces, each a reactor package.",
   "scripts": {
-    "build": "pnpm --filter @powerhousedao/reactor-connectors build && pnpm --filter workflow build && pnpm --filter @powerhousedao/piece-docling build && pnpm --filter @powerhousedao/piece-umh build",
-    "dev": "pnpm --filter @powerhousedao/reactor-connectors build && pnpm --filter workflow vetra",
+    "build": "pnpm -r build",
     "test": "pnpm -r --no-bail test",
     "tsc": "pnpm -r tsc",
     "lint": "pnpm -r lint"

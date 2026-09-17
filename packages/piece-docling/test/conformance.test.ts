@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { buildDescriptor, loadPieceFromDir } from "@powerhousedao/reactor-connectors";
+import { buildDescriptor, loadPieceFromDir } from "@powerhousedao/reactor-workflow/testing";
 import { startMockDocling } from "./mock-docling-serve.js";
 
 const FIX = path.join(tmpdir(), `docling-conform-${process.pid}`);

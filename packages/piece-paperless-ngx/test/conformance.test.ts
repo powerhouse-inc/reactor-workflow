@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type * as ReactorConnectors from "@powerhousedao/reactor-connectors";
+import type * as ReactorConnectors from "@powerhousedao/reactor-workflow/testing";
 import type { MockPaperless } from "./mock-paperless";
 import { startMockPaperless } from "./mock-paperless";
 
@@ -23,7 +23,7 @@ const bundleFile = join(distDir, "src", "index.js");
 type Connectors = typeof ReactorConnectors;
 let connectors: Connectors | undefined;
 try {
-  connectors = await import("@powerhousedao/reactor-connectors");
+  connectors = await import("@powerhousedao/reactor-workflow/testing");
 } catch {
   connectors = undefined;
 }
