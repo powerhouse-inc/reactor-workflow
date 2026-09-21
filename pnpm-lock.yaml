@@ -9,8 +9,8 @@ importers:
   .:
     devDependencies:
       '@powerhousedao/shared':
-        specifier: 6.2.3-dev.12
-        version: 6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+        specifier: 6.2.3-dev.16
+        version: 6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
       tsdown:
         specifier: 0.21.1
         version: 0.21.1(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)(typescript@5.9.3)
@@ -21,15 +21,15 @@ importers:
   packages/piece-docling:
     dependencies:
       '@powerhousedao/pieces-framework':
-        specifier: 6.2.3-dev.12
-        version: 6.2.3-dev.12
+        specifier: 6.2.3-dev.16
+        version: 6.2.3-dev.16
       zod:
         specifier: 4.3.6
         version: 4.3.6
     devDependencies:
       '@powerhousedao/reactor-workflow':
-        specifier: 6.2.3-dev.12
-        version: 6.2.3-dev.12(@babel/runtime@8.0.0)(@electric-sql/pglite@0.3.15)(@types/react@19.2.18)(graphql-tag@2.12.6(graphql@16.12.0))(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(typescript@5.9.3)(ws@8.20.1)
+        specifier: 6.2.3-dev.16
+        version: 6.2.3-dev.16(@babel/runtime@8.0.0)(@electric-sql/pglite@0.3.15)(@types/react@19.2.18)(graphql-tag@2.12.6(graphql@16.12.0))(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(typescript@5.9.3)(ws@8.20.1)
       '@types/node':
         specifier: ^24.13.3
         version: 24.13.3
@@ -49,12 +49,12 @@ importers:
   packages/piece-paperless-ngx:
     dependencies:
       '@powerhousedao/pieces-framework':
-        specifier: 6.2.3-dev.12
-        version: 6.2.3-dev.12
+        specifier: 6.2.3-dev.16
+        version: 6.2.3-dev.16
     devDependencies:
       '@powerhousedao/reactor-workflow':
-        specifier: 6.2.3-dev.12
-        version: 6.2.3-dev.12(@babel/runtime@8.0.0)(@electric-sql/pglite@0.3.15)(@types/react@19.2.18)(graphql-tag@2.12.6(graphql@16.12.0))(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(typescript@5.9.3)(ws@8.20.1)
+        specifier: 6.2.3-dev.16
+        version: 6.2.3-dev.16(@babel/runtime@8.0.0)(@electric-sql/pglite@0.3.15)(@types/react@19.2.18)(graphql-tag@2.12.6(graphql@16.12.0))(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(typescript@5.9.3)(ws@8.20.1)
       '@types/node':
         specifier: ^24.13.3
         version: 24.13.3
@@ -546,14 +546,14 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@powerhousedao/analytics-engine-browser@6.2.3-dev.12':
-    resolution: {integrity: sha512-gpB8apjs4C9IIzr2RDwF7lc38L1MJV/VLzyn9ZH+2od+lY5HuhfGeosdNuBtNzYeD/WMTz9Lx1STipst5jNQ3Q==}
+  '@powerhousedao/analytics-engine-browser@6.2.3-dev.16':
+    resolution: {integrity: sha512-CyHdEuE+Xm5nEvX/AX8r57+Eg20bZ3wzdwRvpwsYZ8HQZXweu6CcVzeyuQ9L77U3ZJTQGNyeroqkl1ZW4WG/4Q==}
 
-  '@powerhousedao/analytics-engine-core@6.2.3-dev.12':
-    resolution: {integrity: sha512-8FjbEFUvvsQwTHtmDzyCCxLJzOTv+LdhW6NJ5DrL4s9tB48oIqUUz2QxZdHogB/ORF2lvVOwztArnE0f9d4wBQ==}
+  '@powerhousedao/analytics-engine-core@6.2.3-dev.16':
+    resolution: {integrity: sha512-WvP/oFceXO+y4i9cm4BG3BVP1B+TTH9uyJj7jcdzKI7tKmyGdQrlfhh7BXoWOqfrzqXGRT1ZNMOo3CiqjAXnCg==}
 
-  '@powerhousedao/design-system@6.2.3-dev.12':
-    resolution: {integrity: sha512-DZ9cQOXo6oEp/zj0Evu6pP7n024ceLvoBGyBePIPx8OSZq9FX1FbIrDWzLOELq0bk/wAWBvEmnCo1Yz6xDA2/Q==}
+  '@powerhousedao/design-system@6.2.3-dev.16':
+    resolution: {integrity: sha512-AgSb1WNYoxj9as299a9Poo6BDFEDmQj5cYsQnVlpGAzlYsJ45w111u+x0JeEFiWivP+VYNK6JlivDppKWmf7/w==}
     peerDependencies:
       react: '>=19.0.0'
       react-dom: '>=19.0.0'
@@ -566,31 +566,31 @@ packages:
       react-dom: ^19.2.0
       zod: ^4.0.0
 
-  '@powerhousedao/pieces-framework@6.2.3-dev.12':
-    resolution: {integrity: sha512-q31tExm8WK2KO0feIRB3EihjBZqREOeLBKuTyhmk2W6aJGZGuu3DtYynxJrECije+n6gQJuVAARuhHgmeTqPdg==}
+  '@powerhousedao/pieces-framework@6.2.3-dev.16':
+    resolution: {integrity: sha512-eyG7OCSSoua8HDIMJGch7iP1DYf/xLHaZaX2a8KHIF2dd5IfyZUqEv/ipvn1QzHlUwPFIxd5KRlAlFAE6SU2UQ==}
 
-  '@powerhousedao/reactor-attachments@6.2.3-dev.12':
-    resolution: {integrity: sha512-NfMdqOYoYQ896Bl7Yz0jjORhwzPKfpqt1oz5KEer0ZvqJG8l6Ta4/9UZcLhA93CkjryoDzVSktzfZlRJLj/TWw==}
+  '@powerhousedao/reactor-attachments@6.2.3-dev.16':
+    resolution: {integrity: sha512-ZkyTrBtrZjHGg9uyOKv1c3chdxvzr5uuaN0dRzUSvVa09Ktx5zRoSUFmi1WgDjn2NKNWmAg3G9gtvyHnErvucQ==}
 
-  '@powerhousedao/reactor-browser@6.2.3-dev.12':
-    resolution: {integrity: sha512-d3PO3Mw0ROzMtluldnfOIof5T/EHHBYO35wL6lNdTOe5iVrvpiLPLFxT+v7rWH4jTERwIrS+5iDB4AN6YsHFrg==}
+  '@powerhousedao/reactor-browser@6.2.3-dev.16':
+    resolution: {integrity: sha512-7u60IU/DYAoSxIT/1gUeo+3CTGh5IkR0hw/sM9C8w1v4JIyrN1N7b6Mql/JxXzP6+T0FW7ytWrHhDBDNHzGT4A==}
     peerDependencies:
       graphql: ^16
       graphql-tag: ^2
       react: '>=19.0.0'
       react-dom: '>=19.0.0'
 
-  '@powerhousedao/reactor-drive@6.2.3-dev.12':
-    resolution: {integrity: sha512-PV/0jN7g/53bYM3eKIcT+r+QbzYpv5MorUsxNmvDMH5R0wFNYs6rY7B+8n26YeBZxLXCgezF9sOAnTgG+4JPWw==}
+  '@powerhousedao/reactor-drive@6.2.3-dev.16':
+    resolution: {integrity: sha512-63OCp06gPjjhHmdwP2Q36XxSsRUtbsvlpJfX+Ll1if2qK/kPYrCdh9qVp4cscrlL+4TkUwlB3wm6GWBRX5JWqg==}
 
-  '@powerhousedao/reactor-workflow@6.2.3-dev.12':
-    resolution: {integrity: sha512-S2lMjkm3zyA4h8U8xVszCNvl960cU35R74Ou4hmuTtQ9/9SeJC5h1tVDtE6PUKNWJzNNabUcQRZVfA2OHTcqHA==}
+  '@powerhousedao/reactor-workflow@6.2.3-dev.16':
+    resolution: {integrity: sha512-SHIjEQKsk4DgfdWHp1dXt6LtsUENBL75IFc0hqdVyJ8cjhXH06YcnAryT4x+IDxt/Sl+ZrZvf4qbF+bI0oFIeg==}
 
-  '@powerhousedao/reactor@6.2.3-dev.12':
-    resolution: {integrity: sha512-VnMTSnpjMRBDC9kzdv/Bc/p3PstS3ee47JzEKfbcraMnSm+fBX32Y8jAXD+6GdtHwpM9KzU4vyTkirggrktEvQ==}
+  '@powerhousedao/reactor@6.2.3-dev.16':
+    resolution: {integrity: sha512-DElcXLmHKvHQ3xLgV66LsBmieV5Y4jsmJ9Hnu+ikdr940xv1HGhZDNhiyAQ6guejjm7lPhHavf8udVImR+nr5g==}
 
-  '@powerhousedao/shared@6.2.3-dev.12':
-    resolution: {integrity: sha512-pPdFOkinkBzm21vcVzICZeeRqhaoPFqx8rj68v+rq+YlxxKg+U3J6qANFtZDMG/infOCf1BpQ6uCt4uhFn68LA==}
+  '@powerhousedao/shared@6.2.3-dev.16':
+    resolution: {integrity: sha512-SnfPTclsV+Z6htQsf5t95YVEuYz52Hyx1gx3KUHc4795O7rGUlqJ5zBwaRFtvKrCkdpdj406T8RA/hwCxJ//Aw==}
     peerDependencies:
       '@sentry/node-core': ^10.52.0
       rolldown: 1.0.0-rc.8
@@ -600,8 +600,8 @@ packages:
       rolldown:
         optional: true
 
-  '@powerhousedao/workflow@6.2.3-dev.12':
-    resolution: {integrity: sha512-NAphxEqWupPX5UBMb6Mio2K23kTYdHHBZ71gPI+uQktOVT03x8ji9gLCpRLjWwvLeFfdtwdFbTJq44+u8gdarg==}
+  '@powerhousedao/workflow@6.2.3-dev.16':
+    resolution: {integrity: sha512-wSedDauJHfr3Zf0c4e1KNElZx7q5qm/er42VMeFiqUxcH7QUSTnlw9B7jS10wOxV2yb7I5qBcWJiemET71g/Zw==}
 
   '@quansync/fs@1.0.0':
     resolution: {integrity: sha512-4TJ3DFtlf1L5LDMaM6CanJ/0lckGNtJcMjQ1NAV6zDmA0tEHKZtxNKin8EgPaVX1YzljbxckyT2tJrpQKAtngQ==}
@@ -1217,8 +1217,8 @@ packages:
   '@radix-ui/rect@1.1.1':
     resolution: {integrity: sha512-HPwpGIzkl28mWyZqG52jiqDJ12waP11Pa1lGoiyUkIEuMLBP0oeK/C89esbXrxsky5we7dfd8U58nm0SgAWpVw==}
 
-  '@renown/sdk@6.2.3-dev.12':
-    resolution: {integrity: sha512-veR7KKxNnU25kGQcrqKSK/gFmR/Yhpm571Qm5eJd05jIgS0/t60AoTPv54HAXf41Xt/cdqLq7SI9dfaSM5/4Hg==}
+  '@renown/sdk@6.2.3-dev.16':
+    resolution: {integrity: sha512-sDC81yhwY0vJj/Ex/6Y7/VG59V0uoyv+lqluVnHbuJeimazAe0RSH8pvRo8wcEnz1HPKMpe3BvGycLk8GOzveg==}
     peerDependencies:
       '@privy-io/react-auth': ^3.25.0
       '@rainbow-me/rainbowkit': ^2.2.11
@@ -2034,8 +2034,8 @@ packages:
     resolution: {integrity: sha512-DPi0FmjiSU5EvQV0++GFDOJ9ASQUVFh5kD+OzOnYdi7n3Wpm9hWWGfB/O2blfHcMVTL5WkQXSnRiK9makhrcnw==}
     engines: {node: '>=0.3.1'}
 
-  document-model@6.2.3-dev.12:
-    resolution: {integrity: sha512-qWmI/hjeCzfn/yHfcIxM4SsII0SJuCtE7558axSfbUdJOLyv0ax0Kfq2RrhoHDXKxneR376PrqRhkdI163cm/g==}
+  document-model@6.2.3-dev.16:
+    resolution: {integrity: sha512-q+IWLUYZclE8oKMa33ZXl/Y0ILsWk8QkTpt6vvsxfp9IhH5jyGcB5ORU/9SI96w2iYFrn6OUnRsL3dsWjh8EmA==}
 
   dom-helpers@5.2.1:
     resolution: {integrity: sha512-nRCa7CK3VTrM2NmGkIy4cbK7IZlgBE/PYMn55rrXefr5xXDP0LdtfPnblFDoVdcAfslJ7or6iqAUnx0CCGIWQA==}
@@ -3996,10 +3996,10 @@ snapshots:
   '@oxlint/binding-win32-x64-msvc@1.70.0':
     optional: true
 
-  '@powerhousedao/analytics-engine-browser@6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))':
+  '@powerhousedao/analytics-engine-browser@6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))':
     dependencies:
       '@electric-sql/pglite': 0.3.15
-      '@powerhousedao/analytics-engine-core': 6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      '@powerhousedao/analytics-engine-core': 6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
       change-case: 5.4.4
       luxon: 3.7.2
     transitivePeerDependencies:
@@ -4007,19 +4007,19 @@ snapshots:
       - rolldown
       - supports-color
 
-  '@powerhousedao/analytics-engine-core@6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))':
+  '@powerhousedao/analytics-engine-core@6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))':
     dependencies:
-      '@powerhousedao/shared': 6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      '@powerhousedao/shared': 6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
       luxon: 3.7.2
     transitivePeerDependencies:
       - '@sentry/node-core'
       - rolldown
       - supports-color
 
-  '@powerhousedao/design-system@6.2.3-dev.12(@babel/runtime@8.0.0)(@electric-sql/pglite@0.3.15)(@types/react@19.2.18)(graphql-tag@2.12.6(graphql@16.12.0))(graphql@16.12.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(typescript@5.9.3)(ws@8.20.1)':
+  '@powerhousedao/design-system@6.2.3-dev.16(@babel/runtime@8.0.0)(@electric-sql/pglite@0.3.15)(@types/react@19.2.18)(graphql-tag@2.12.6(graphql@16.12.0))(graphql@16.12.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(typescript@5.9.3)(ws@8.20.1)':
     dependencies:
-      '@powerhousedao/reactor-browser': 6.2.3-dev.12(@electric-sql/pglite@0.3.15)(@types/react@19.2.18)(graphql-tag@2.12.6(graphql@16.12.0))(graphql@16.12.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(typescript@5.9.3)(ws@8.20.1)
-      '@powerhousedao/shared': 6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      '@powerhousedao/reactor-browser': 6.2.3-dev.16(@electric-sql/pglite@0.3.15)(@types/react@19.2.18)(graphql-tag@2.12.6(graphql@16.12.0))(graphql@16.12.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(typescript@5.9.3)(ws@8.20.1)
+      '@powerhousedao/shared': 6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
       '@radix-ui/react-checkbox': 1.3.11(@types/react@19.2.18)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@radix-ui/react-dialog': 1.1.23(@types/react@19.2.18)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@radix-ui/react-dropdown-menu': 2.1.16(@types/react@19.2.18)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -4121,7 +4121,7 @@ snapshots:
       - '@types/react-dom'
       - supports-color
 
-  '@powerhousedao/pieces-framework@6.2.3-dev.12':
+  '@powerhousedao/pieces-framework@6.2.3-dev.16':
     dependencies:
       dayjs: 1.11.9
       form-data: 4.0.6
@@ -4129,13 +4129,13 @@ snapshots:
       nanoid: 3.3.17
       zod: 4.3.6
 
-  '@powerhousedao/reactor-attachments@6.2.3-dev.12(@types/react@19.2.18)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(zod@4.3.6)':
+  '@powerhousedao/reactor-attachments@6.2.3-dev.16(@types/react@19.2.18)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(zod@4.3.6)':
     dependencies:
       '@aws-sdk/client-s3': 3.1087.0
       '@aws-sdk/s3-request-presigner': 3.1087.0
       '@powerhousedao/document-engineering': 1.40.5(@types/react@19.2.18)(graphql@16.12.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(zod@4.3.6)
-      '@powerhousedao/reactor': 6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
-      '@powerhousedao/shared': 6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      '@powerhousedao/reactor': 6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      '@powerhousedao/shared': 6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
       change-case: 5.4.4
       graphql: 16.12.0
       kysely: 0.28.16
@@ -4152,20 +4152,20 @@ snapshots:
       - supports-color
       - zod
 
-  '@powerhousedao/reactor-browser@6.2.3-dev.12(@electric-sql/pglite@0.3.15)(@types/react@19.2.18)(graphql-tag@2.12.6(graphql@16.12.0))(graphql@16.12.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(typescript@5.9.3)(ws@8.20.1)':
+  '@powerhousedao/reactor-browser@6.2.3-dev.16(@electric-sql/pglite@0.3.15)(@types/react@19.2.18)(graphql-tag@2.12.6(graphql@16.12.0))(graphql@16.12.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(typescript@5.9.3)(ws@8.20.1)':
     dependencies:
       '@ai-sdk/openai-compatible': 3.0.37(zod@4.3.6)
-      '@powerhousedao/analytics-engine-browser': 6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
-      '@powerhousedao/analytics-engine-core': 6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
-      '@powerhousedao/reactor': 6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
-      '@powerhousedao/reactor-attachments': 6.2.3-dev.12(@types/react@19.2.18)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(zod@4.3.6)
-      '@powerhousedao/reactor-drive': 6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
-      '@powerhousedao/shared': 6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
-      '@renown/sdk': 6.2.3-dev.12(@tanstack/react-query@5.90.21(react@19.2.6))(react@19.2.6)(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(typescript@5.9.3)(zod@4.3.6)
+      '@powerhousedao/analytics-engine-browser': 6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      '@powerhousedao/analytics-engine-core': 6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      '@powerhousedao/reactor': 6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      '@powerhousedao/reactor-attachments': 6.2.3-dev.16(@types/react@19.2.18)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(zod@4.3.6)
+      '@powerhousedao/reactor-drive': 6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      '@powerhousedao/shared': 6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      '@renown/sdk': 6.2.3-dev.16(@tanstack/react-query@5.90.21(react@19.2.6))(react@19.2.6)(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(typescript@5.9.3)(zod@4.3.6)
       '@tanstack/react-query': 5.90.21(react@19.2.6)
       ai: 7.0.83(zod@4.3.6)
       change-case: 5.4.4
-      document-model: 6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      document-model: 6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
       graphql: 16.12.0
       graphql-request: 7.4.0(graphql@16.12.0)
       graphql-tag: 2.12.6(graphql@16.12.0)
@@ -4205,11 +4205,11 @@ snapshots:
       - wagmi
       - ws
 
-  '@powerhousedao/reactor-drive@6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))':
+  '@powerhousedao/reactor-drive@6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))':
     dependencies:
-      '@powerhousedao/reactor': 6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
-      '@powerhousedao/shared': 6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
-      document-model: 6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      '@powerhousedao/reactor': 6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      '@powerhousedao/shared': 6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      document-model: 6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
       graphql: 16.12.0
       graphql-tag: 2.12.6(graphql@16.12.0)
       kysely: 0.28.16
@@ -4219,14 +4219,14 @@ snapshots:
       - rolldown
       - supports-color
 
-  '@powerhousedao/reactor-workflow@6.2.3-dev.12(@babel/runtime@8.0.0)(@electric-sql/pglite@0.3.15)(@types/react@19.2.18)(graphql-tag@2.12.6(graphql@16.12.0))(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(typescript@5.9.3)(ws@8.20.1)':
+  '@powerhousedao/reactor-workflow@6.2.3-dev.16(@babel/runtime@8.0.0)(@electric-sql/pglite@0.3.15)(@types/react@19.2.18)(graphql-tag@2.12.6(graphql@16.12.0))(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(typescript@5.9.3)(ws@8.20.1)':
     dependencies:
-      '@powerhousedao/pieces-framework': 6.2.3-dev.12
-      '@powerhousedao/reactor': 6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
-      '@powerhousedao/shared': 6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
-      '@powerhousedao/workflow': 6.2.3-dev.12(@babel/runtime@8.0.0)(@electric-sql/pglite@0.3.15)(@types/react@19.2.18)(graphql-tag@2.12.6(graphql@16.12.0))(graphql@16.12.0)(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(typescript@5.9.3)(ws@8.20.1)
+      '@powerhousedao/pieces-framework': 6.2.3-dev.16
+      '@powerhousedao/reactor': 6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      '@powerhousedao/shared': 6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      '@powerhousedao/workflow': 6.2.3-dev.16(@babel/runtime@8.0.0)(@electric-sql/pglite@0.3.15)(@types/react@19.2.18)(graphql-tag@2.12.6(graphql@16.12.0))(graphql@16.12.0)(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(typescript@5.9.3)(ws@8.20.1)
       croner: 10.0.1
-      document-model: 6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      document-model: 6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
       graphql: 16.12.0
     transitivePeerDependencies:
       - '@babel/runtime'
@@ -4251,12 +4251,12 @@ snapshots:
       - wagmi
       - ws
 
-  '@powerhousedao/reactor@6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))':
+  '@powerhousedao/reactor@6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))':
     dependencies:
       '@electric-sql/pglite': 0.3.15
-      '@powerhousedao/shared': 6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      '@powerhousedao/shared': 6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
       '@sindresorhus/fnv1a': 3.1.0
-      document-model: 6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      document-model: 6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
       kysely: 0.28.16
       kysely-pglite-dialect: 1.2.0(@electric-sql/pglite@0.3.15)(kysely@0.28.16)
       pg: 8.18.0
@@ -4267,7 +4267,7 @@ snapshots:
       - rolldown
       - supports-color
 
-  '@powerhousedao/shared@6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))':
+  '@powerhousedao/shared@6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))':
     dependencies:
       '@sindresorhus/fnv1a': 3.1.0
       chalk: 5.6.2
@@ -4295,15 +4295,15 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@powerhousedao/workflow@6.2.3-dev.12(@babel/runtime@8.0.0)(@electric-sql/pglite@0.3.15)(@types/react@19.2.18)(graphql-tag@2.12.6(graphql@16.12.0))(graphql@16.12.0)(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(typescript@5.9.3)(ws@8.20.1)':
+  '@powerhousedao/workflow@6.2.3-dev.16(@babel/runtime@8.0.0)(@electric-sql/pglite@0.3.15)(@types/react@19.2.18)(graphql-tag@2.12.6(graphql@16.12.0))(graphql@16.12.0)(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(typescript@5.9.3)(ws@8.20.1)':
     dependencies:
-      '@powerhousedao/design-system': 6.2.3-dev.12(@babel/runtime@8.0.0)(@electric-sql/pglite@0.3.15)(@types/react@19.2.18)(graphql-tag@2.12.6(graphql@16.12.0))(graphql@16.12.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(typescript@5.9.3)(ws@8.20.1)
-      '@powerhousedao/pieces-framework': 6.2.3-dev.12
-      '@powerhousedao/reactor': 6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
-      '@powerhousedao/reactor-browser': 6.2.3-dev.12(@electric-sql/pglite@0.3.15)(@types/react@19.2.18)(graphql-tag@2.12.6(graphql@16.12.0))(graphql@16.12.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(typescript@5.9.3)(ws@8.20.1)
-      '@powerhousedao/shared': 6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      '@powerhousedao/design-system': 6.2.3-dev.16(@babel/runtime@8.0.0)(@electric-sql/pglite@0.3.15)(@types/react@19.2.18)(graphql-tag@2.12.6(graphql@16.12.0))(graphql@16.12.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(typescript@5.9.3)(ws@8.20.1)
+      '@powerhousedao/pieces-framework': 6.2.3-dev.16
+      '@powerhousedao/reactor': 6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      '@powerhousedao/reactor-browser': 6.2.3-dev.16(@electric-sql/pglite@0.3.15)(@types/react@19.2.18)(graphql-tag@2.12.6(graphql@16.12.0))(graphql@16.12.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(typescript@5.9.3)(ws@8.20.1)
+      '@powerhousedao/shared': 6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
       '@xyflow/react': 12.11.6(@types/react@19.2.18)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      document-model: 6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      document-model: 6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
       react-markdown: 10.1.0(@types/react@19.2.18)(react@19.2.6)
@@ -4881,10 +4881,10 @@ snapshots:
 
   '@radix-ui/rect@1.1.1': {}
 
-  '@renown/sdk@6.2.3-dev.12(@tanstack/react-query@5.90.21(react@19.2.6))(react@19.2.6)(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(typescript@5.9.3)(zod@4.3.6)':
+  '@renown/sdk@6.2.3-dev.16(@tanstack/react-query@5.90.21(react@19.2.6))(react@19.2.6)(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(typescript@5.9.3)(zod@4.3.6)':
     dependencies:
       '@didtools/key-webcrypto': 0.2.0
-      '@powerhousedao/shared': 6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      '@powerhousedao/shared': 6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
       did-jwt-vc: 4.0.16
       did-resolver: 4.1.0
       key-did-resolver: 4.0.0
@@ -5527,9 +5527,9 @@ snapshots:
 
   diff@8.0.4: {}
 
-  document-model@6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)):
+  document-model@6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)):
     dependencies:
-      '@powerhousedao/shared': 6.2.3-dev.12(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      '@powerhousedao/shared': 6.2.3-dev.16(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
     transitivePeerDependencies:
       - '@sentry/node-core'
       - rolldown

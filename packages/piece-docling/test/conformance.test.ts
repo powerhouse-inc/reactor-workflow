@@ -7,11 +7,15 @@ import { copyFile, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   buildDescriptor,
   loadPieceFromDir,
   PieceRegistry,
+} from "@powerhousedao/reactor-workflow/testing";
+import type {
+  LocalPiece,
+  PackagePiece,
 } from "@powerhousedao/reactor-workflow/testing";
 import { startMockDocling } from "./mock-docling-serve.js";
 
@@ -24,6 +28,26 @@ const entryPath = path.join(
   packageRoot,
   "dist/node/pieces/docling/index.mjs",
 );
+
+// The built list a host imports to learn what this package ships.
+const listPath = path.join(packageRoot, "dist/node/pieces/index.mjs");
+
+// What a host does with this package installed: import the built list and
+// hand it to the registry. Resolving a package to that list is reactor-api's
+// job since powerhouse#3056, so the registry holds what it is given.
+async function declaredPieces(): Promise<LocalPiece[]> {
+  const { pieces } = (await import(pathToFileURL(listPath).href)) as {
+    pieces: PackagePiece[];
+  };
+  return pieces.map((piece) => ({
+    name: piece.name,
+    version: piece.version,
+    ...(piece.entry ? { entryPath: path.join(packageRoot, piece.entry) } : {}),
+    ...(piece.bundle
+      ? { bundleDir: path.join(packageRoot, piece.bundle) }
+      : {}),
+  }));
+}
 
 const ready = existsSync(entryPath);
 
@@ -54,7 +78,7 @@ describe.skipIf(!ready)("piece conformance (Tier-1)", () => {
 
   it("declares itself where a reactor reads it, with nothing left to install", async () => {
     const registry = new PieceRegistry();
-    await registry.load(packageRoot);
+    registry.setPieces(await declaredPieces());
     expect(registry.lookup(PIECE)).toMatchObject({
       name: PIECE,
       version: VERSION,
