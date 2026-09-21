@@ -11,6 +11,9 @@ importers:
       '@powerhousedao/shared':
         specifier: 6.2.3-dev.18
         version: 6.2.3-dev.18(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))
+      '@renown/sdk':
+        specifier: 6.2.3-dev.18
+        version: 6.2.3-dev.18(@tanstack/react-query@5.90.21(react@19.2.6))(react@19.2.6)(rolldown@1.0.0-rc.8(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0))(typescript@5.9.3)(zod@4.3.6)
       tsdown:
         specifier: 0.21.1
         version: 0.21.1(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)(typescript@5.9.3)

@@ -11,6 +11,7 @@
   },
   "devDependencies": {
     "@powerhousedao/shared": "6.2.3-dev.18",
+    "@renown/sdk": "6.2.3-dev.18",
     "tsdown": "0.21.1",
     "typescript": "5.9.3"
   },

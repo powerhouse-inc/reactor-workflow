@@ -1,0 +1,148 @@
+name: release
+
+# Publishes every package under packages/ to the Vetra registries, at whatever
+# version is committed. Version bumps are a prior manual commit, so this
+# workflow never writes to the repository.
+#
+#   channel   dist-tag   registries
+#   dev       dev        registry.dev.vetra.io
+#   latest    latest     registry.dev.vetra.io + registry.vetra.io
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel
+        type: choice
+        options: [dev, latest]
+        default: dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve channel
+        id: meta
+        run: |
+          case "${{ inputs.channel }}" in
+            dev)
+              echo "tag=dev" >> "$GITHUB_OUTPUT"
+              echo "registries=https://registry.dev.vetra.io" >> "$GITHUB_OUTPUT" ;;
+            latest)
+              echo "tag=latest" >> "$GITHUB_OUTPUT"
+              echo "registries=https://registry.dev.vetra.io https://registry.vetra.io" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::unknown channel ${{ inputs.channel }}"; exit 1 ;;
+          esac
+
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile --prefer-offline
+
+      # `files` is just ["dist"], so an unbuilt workspace packs empty tarballs.
+      - run: pnpm run build
+
+      # pnpm pack resolves catalog:/workspace: specifiers into real versions;
+      # publishing the source directory with npm would ship broken specs.
+      - name: Pack tarballs
+        id: pack
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/tgz"
+          : > "$RUNNER_TEMP/packages.tsv"
+          for dir in packages/*/; do
+            [ -f "$dir/package.json" ] || continue
+            name=$(node -p "require('./$dir/package.json').name")
+            version=$(node -p "require('./$dir/package.json').version")
+            private=$(node -p "require('./$dir/package.json').private === true")
+            [ "$private" = "false" ] || { echo "skipping private $name"; continue; }
+
+            tgz="$(cd "$dir" && pnpm pack --pack-destination "$RUNNER_TEMP/tgz" | tail -1)"
+            [ -f "$tgz" ] || { echo "::error::pnpm pack produced no tarball for $name"; exit 1; }
+            if tar -xzO -f "$tgz" package/package.json | grep -E 'catalog:|workspace:'; then
+              echo "::error::$name tarball has unresolved catalog:/workspace: specs"; exit 1
+            fi
+            printf '%s\t%s\t%s\n' "$name" "$version" "$tgz" >> "$RUNNER_TEMP/packages.tsv"
+          done
+          [ -s "$RUNNER_TEMP/packages.tsv" ] || { echo "::error::nothing to publish"; exit 1; }
+          cat "$RUNNER_TEMP/packages.tsv"
+
+      - name: Guard registry credentials
+        env:
+          RENOWN_KEY: ${{ secrets.REGISTRY_RENOWN_KEY }}
+          RENOWN_ADDRESS: ${{ secrets.REGISTRY_RENOWN_ADDRESS }}
+        run: |
+          for s in RENOWN_KEY RENOWN_ADDRESS; do
+            [ -n "${!s}" ] || { echo "::error::secret REGISTRY_$s is not set"; exit 1; }
+          done
+
+      - name: Publish
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          REGISTRIES: ${{ steps.meta.outputs.registries }}
+          RENOWN_ADDRESS: ${{ secrets.REGISTRY_RENOWN_ADDRESS }}
+          PH_RENOWN_PRIVATE_KEY: ${{ secrets.REGISTRY_RENOWN_KEY }}
+        run: |
+          set -euo pipefail
+
+          # A fresh token per registry, with `aud` set to that registry. The
+          # registry verifies the JWT and fetches the matching delegation
+          # credential; ownership is then keyed on the publisher's pkh DID.
+          mint_token() { # <registry>
+            local reg="$1" token who
+            token=$(node scripts/publish/mint-renown-token.mjs "$reg")
+            echo "::add-mask::$token"
+            echo "//${reg#https://}/:_authToken=$token" >> ~/.npmrc
+            # The token must resolve to an owner DID. Fail here rather than as
+            # an opaque 403 halfway through publishing.
+            who=$(curl -sf -H "Authorization: Bearer $token" "$reg/-/whoami" || true)
+            case "$who" in
+              *did:pkh:*) echo "authenticated to $reg as $who" ;;
+              *) echo "::error::Renown auth failed on $reg — no valid delegation credential for $RENOWN_ADDRESS. Run the provision-credential workflow."; exit 1 ;;
+            esac
+          }
+
+          publish_one() { # <name> <version> <tarball> <registry>
+            local name="$1" version="$2" tgz="$3" reg="$4"
+            # Skip-if-exists keeps a rerun idempotent (a republish would 409);
+            # still point the dist-tag at the version.
+            if curl -sfo /dev/null "$reg/$name/$version?cb=$RANDOM"; then
+              echo "$name@$version already on $reg — ensuring dist-tag '$TAG'"
+              npm dist-tag add "$name@$version" "$TAG" --registry "$reg"
+            else
+              npm publish "$tgz" --registry "$reg" --tag "$TAG"
+            fi
+          }
+
+          for reg in $REGISTRIES; do
+            mint_token "$reg"
+            while IFS=$'\t' read -r name version tgz; do
+              publish_one "$name" "$version" "$tgz" "$reg"
+            done < "$RUNNER_TEMP/packages.tsv"
+          done
+
+      # npm view serves stale data for minutes after a publish — the
+      # cache-busted dist-tags endpoint is what actually reflects the registry.
+      - name: Verify dist-tags
+        env:
+          REGISTRIES: ${{ steps.meta.outputs.registries }}
+        run: |
+          for reg in $REGISTRIES; do
+            while IFS=$'\t' read -r name version tgz; do
+              echo "== $reg  $name"
+              curl -s "$reg/-/package/$name/dist-tags?cb=$RANDOM"; echo
+            done < "$RUNNER_TEMP/packages.tsv"
+          done
