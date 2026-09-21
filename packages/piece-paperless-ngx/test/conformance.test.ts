@@ -7,7 +7,7 @@ import { copyFile, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   buildDescriptor,
@@ -15,7 +15,10 @@ import {
   PieceRegistry,
   PieceWorker,
 } from "@powerhousedao/reactor-workflow/testing";
-import type { LocalPiece } from "@powerhousedao/reactor-workflow/testing";
+import type {
+  LocalPiece,
+  PackagePiece,
+} from "@powerhousedao/reactor-workflow/testing";
 import type { MockPaperless } from "./mock-paperless";
 import { startMockPaperless } from "./mock-paperless";
 
@@ -30,6 +33,24 @@ const entryPath = join(
   "paperless-ngx",
   "index.mjs",
 );
+
+// The built list a host imports to learn what this package ships.
+const listPath = join(packageRoot, "dist", "node", "pieces", "index.mjs");
+
+// What a host does with this package installed: import the built list and
+// hand it to the registry. Resolving a package to that list is reactor-api's
+// job since powerhouse#3056, so the registry holds what it is given.
+async function declaredPieces(): Promise<LocalPiece[]> {
+  const { pieces } = (await import(pathToFileURL(listPath).href)) as {
+    pieces: PackagePiece[];
+  };
+  return pieces.map((piece) => ({
+    name: piece.name,
+    version: piece.version,
+    ...(piece.entry ? { entryPath: join(packageRoot, piece.entry) } : {}),
+    ...(piece.bundle ? { bundleDir: join(packageRoot, piece.bundle) } : {}),
+  }));
+}
 
 // A workspace that has not built yet skips rather than fails; `pnpm test`
 // builds first, and so does CI.
@@ -53,10 +74,8 @@ async function stagePiece(): Promise<string> {
 
 describe.skipIf(!ready)("piece conformance", () => {
   beforeAll(async () => {
-    // What a reactor does with this package installed: read the pieces it
-    // declares, and resolve each one to a module on disk.
     const registry = new PieceRegistry();
-    await registry.load(packageRoot);
+    registry.setPieces(await declaredPieces());
     declared = registry.lookup(PIECE);
     bundleDir = await stagePiece();
     mock = await startMockPaperless();
