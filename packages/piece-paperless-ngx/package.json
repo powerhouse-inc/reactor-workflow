@@ -45,10 +45,10 @@
   ],
   "license": "AGPL-3.0-only",
   "dependencies": {
-    "@powerhousedao/pieces-framework": "6.2.3-dev.18"
+    "@powerhousedao/pieces-framework": "6.2.3-dev.20"
   },
   "devDependencies": {
-    "@powerhousedao/reactor-workflow": "6.2.3-dev.18",
+    "@powerhousedao/reactor-workflow": "6.2.3-dev.20",
     "@types/node": "^24.13.3",
     "oxlint": "1.70.0",
     "oxlint-tsgolint": "0.23.0",
