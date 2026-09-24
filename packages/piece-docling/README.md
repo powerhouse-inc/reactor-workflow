@@ -11,7 +11,7 @@ endpoint, over the **v1 REST API**. Written against
 | | |
 | --- | --- |
 | Auth | Optional API key (the demo server runs unauthenticated — leave it empty) |
-| Connection check | `checkConnection` probes a key-gated `/v1/` route with the configured key and reports the server version as the connection label |
+| Connection check | `auth.validate` probes a key-gated `/v1/` route with the configured key; `auth.getConnectionIdentifier` labels the connection with the server version |
 | Verified against | **docling-serve v1.32.0** |
 
 ## The v1 API surface this piece uses

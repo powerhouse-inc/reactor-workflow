@@ -6,7 +6,7 @@ import { convertFileAction } from "../pieces/docling/lib/actions/convert-file.js
 import { makeActionContext } from "./mock-context.js";
 import { startMockDocling as startMock2 } from "./mock-docling-serve.js";
 
-const SERVER = { apiUrl: "", publicUrl: "" } as never; // validate never touches server
+const SERVER = { apiUrl: "", publicUrl: "" } as never; // neither hook touches server
 
 describe("doclingAuth.validate", () => {
   let mock: MockDocling;
@@ -39,6 +39,22 @@ describe("doclingAuth.validate", () => {
     });
     expect(res.valid).toBe(false);
     if (!res.valid) expect(res.error).toMatch(/Could not reach/);
+  });
+});
+
+describe("doclingAuth.getConnectionIdentifier", () => {
+  it("labels the connection with the server version", async () => {
+    const mock = await startMockDocling({ apiKey: "k-test" });
+    try {
+      await expect(
+        doclingAuth.getConnectionIdentifier!({
+          auth: { base_url: mock.baseUrl, api_key: "k-test" },
+          server: SERVER,
+        }),
+      ).resolves.toBe("docling-serve 1.32.0");
+    } finally {
+      await mock.close();
+    }
   });
 });
 

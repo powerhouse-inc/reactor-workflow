@@ -62,8 +62,8 @@ export const doclingAuth = PieceAuth.CustomAuth({
         "The server's DOCLING_SERVE_API_KEY value, sent as the X-Api-Key header. Leave empty for an unauthenticated local server.",
     }),
   },
-  // 0.32.0 passes the FLAT property value here ({ base_url, api_key }) —
-  // the shaped { type, props } object only exists on runtime ctx.auth.
+  // Both hooks are handed the flat property value ({ base_url, api_key }); the
+  // { type, props } envelope is an action's ctx.auth.
   validate: async ({ auth }) => {
     const base = normalizeBaseUrl(auth.base_url);
     const key = typeof auth.api_key === "string" ? auth.api_key : undefined;
@@ -101,6 +101,21 @@ export const doclingAuth = PieceAuth.CustomAuth({
         error: `Could not reach docling-serve at ${base}. ${detail}`,
       };
     }
+  },
+  // Runs once validate passes; labels the connection with the server version.
+  getConnectionIdentifier: async ({ auth }) => {
+    const key = typeof auth.api_key === "string" ? auth.api_key : undefined;
+    const res = await httpClient.sendRequest({
+      method: HttpMethod.GET,
+      url: `${normalizeBaseUrl(auth.base_url)}/version`,
+      headers: authKeyHeaders(key),
+      timeout: 10_000,
+      retries: 0,
+    });
+    // 1.32.0 spells the key with a hyphen; older builds used an underscore.
+    const body = res.body as Record<string, unknown>;
+    const version = body["docling-serve"] ?? body.docling_serve;
+    return typeof version === "string" ? `docling-serve ${version}` : "docling-serve";
   },
 });
 

@@ -110,35 +110,33 @@ describe.skipIf(!ready)("piece conformance (Tier-1)", () => {
     expect(descriptor.actions.map((a) => a.name)).toContain("health");
   });
 
-  it("exposes a checkConnection shim compatible with the reactor subgraph contract", async () => {
+  it("checks and labels a connection through the built auth's own hooks", async () => {
     const loaded = await loadPieceFromDir(bundleDir);
-    const check = (
+    const auth = (
       loaded.piece as unknown as {
-        checkConnection?: (ctx: unknown) => Promise<unknown>;
+        auth?: {
+          validate?: (ctx: unknown) => Promise<unknown>;
+          getConnectionIdentifier?: (ctx: unknown) => Promise<unknown>;
+        };
       }
-    ).checkConnection;
-    expect(typeof check).toBe("function");
+    ).auth;
+    expect(loaded.piece).not.toHaveProperty("checkConnection");
     const mock = await startMockDocling({ apiKey: "k-test" });
     try {
-      const out = await check!({
-        auth: {
-          type: "CUSTOM_AUTH",
-          props: { base_url: mock.baseUrl, api_key: "k-test" },
-        },
-      });
-      // vitest 4.1.1 types the asymmetric matcher factories as `any`; `as
-      // unknown` is the minimal silencer (opaque matcher consumed by expect).
-      expect(out).toMatchObject({
-        name: expect.stringContaining("docling-serve 1.32.0") as unknown,
+      const server = { apiUrl: "", publicUrl: "" };
+      const good = { base_url: mock.baseUrl, api_key: "k-test" };
+      await expect(auth?.validate?.({ auth: good, server })).resolves.toEqual({
+        valid: true,
       });
       await expect(
-        check!({
-          auth: {
-            type: "CUSTOM_AUTH",
-            props: { base_url: mock.baseUrl, api_key: "bad" },
-          },
+        auth?.getConnectionIdentifier?.({ auth: good, server }),
+      ).resolves.toBe("docling-serve 1.32.0");
+      await expect(
+        auth?.validate?.({
+          auth: { base_url: mock.baseUrl, api_key: "bad" },
+          server,
         }),
-      ).rejects.toThrow();
+      ).resolves.toMatchObject({ valid: false });
     } finally {
       await mock.close();
     }
