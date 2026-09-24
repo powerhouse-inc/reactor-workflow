@@ -1,5 +1,5 @@
 import { createPiece, PieceCategory } from "@powerhousedao/pieces-framework";
-import { checkPaperlessConnection, paperlessAuth } from "./lib/auth";
+import { paperlessAuth } from "./lib/auth";
 import { bulkEditDocuments } from "./lib/actions/bulk-edit-documents";
 import { customApiCall } from "./lib/actions/custom-api-call";
 import { findOrCreateObject } from "./lib/actions/find-or-create-object";
@@ -37,17 +37,6 @@ export const paperlessNgx = createPiece({
   ],
   triggers: [newDocument, documentUpdated],
 });
-
-// The reactor's checkConnection mutation calls `piece.checkConnection(ctx)` if
-// the piece declares one, and records its label on the connection document.
-// Not part of the Activepieces surface (real AP never calls it), and the host
-// tolerates its absence — declaring it is what gives the connection a status
-// and an account label.
-(
-  paperlessNgx as unknown as {
-    checkConnection: (context: { auth?: unknown }) => Promise<unknown>;
-  }
-).checkConnection = checkPaperlessConnection;
 
 export { paperlessAuth };
 export default paperlessNgx;

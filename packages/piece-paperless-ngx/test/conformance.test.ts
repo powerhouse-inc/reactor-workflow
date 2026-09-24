@@ -213,10 +213,11 @@ describe.skipIf(!ready)("piece conformance", () => {
 
       const outcome = result.output as {
         declared: boolean;
-        result?: { name?: string };
+        valid: boolean;
+        accountLabel?: string;
       };
-      expect(outcome.declared).toBe(true);
-      expect(outcome.result?.name).toMatch(/^archivist@/);
+      expect(outcome).toMatchObject({ declared: true, valid: true });
+      expect(outcome.accountLabel).toMatch(/^archivist@/);
     } finally {
       worker.dispose();
     }

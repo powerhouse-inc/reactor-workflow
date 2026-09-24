@@ -25,20 +25,23 @@ export const paperlessAuth = PieceAuth.CustomAuth({
       description: "paperless web UI -> My Profile -> API Token",
     }),
   },
-  // Activepieces 0.32.0 hands `validate` the flat property value; the reactor
-  // never calls it (it uses the piece's checkConnection instead), so this is
-  // pure AP semantics.
+  // Both hooks are handed the flat property value, not the { type, props }
+  // envelope an action's ctx.auth carries.
   validate: async ({ auth }) => {
     try {
-      const settings = await clientFor(auth).uiSettings();
-      return {
-        valid: true as const,
-        // Not shown by every AP build, but harmless where it is ignored.
-        message: `Connected as ${settings.username}`,
-      };
+      await clientFor(auth).uiSettings();
+      return { valid: true as const };
     } catch (error) {
       return { valid: false as const, error: describeAuthFailure(error) };
     }
+  },
+  // Runs once validate passes; labels the connection with user, host and versions.
+  getConnectionIdentifier: async ({ auth }) => {
+    const client = clientFor(auth);
+    const settings = await client.uiSettings();
+    const version = await client.apiVersion();
+    const host = new URL(client.credentials.baseUrl).host;
+    return `${settings.username}@${host} (v${settings.serverVersion ?? "?"}, API ${version})`;
   },
 });
 
@@ -59,33 +62,4 @@ function describeAuthFailure(error: unknown): string {
     }
   }
   return error instanceof Error ? error.message : String(error);
-}
-
-export interface ConnectionIdentity {
-  name: string;
-  username: string;
-  serverVersion?: string;
-  apiVersion?: number;
-  permissions: string[];
-}
-
-// The reactor's `checkConnection` mutation calls this and takes the label from
-// the first string-valued `name`/`username`/`email`/`sub` field. Declaring it
-// is what populates the connection document's status and accountLabel; the
-// host tolerates its absence (CheckConnectionOutcome.declared), and real
-// Activepieces never calls it.
-export async function checkPaperlessConnection(context: {
-  auth?: unknown;
-}): Promise<ConnectionIdentity> {
-  const client = clientFor(context.auth);
-  const settings = await client.uiSettings();
-  const version = await client.apiVersion();
-  const host = new URL(client.credentials.baseUrl).host;
-  return {
-    name: `${settings.username}@${host} (v${settings.serverVersion ?? "?"}, API ${version})`,
-    username: settings.username,
-    serverVersion: settings.serverVersion,
-    apiVersion: version,
-    permissions: settings.permissions,
-  };
 }
