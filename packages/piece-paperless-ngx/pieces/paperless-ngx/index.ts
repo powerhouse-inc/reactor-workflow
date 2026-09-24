@@ -22,7 +22,6 @@ export const paperlessNgx = createPiece({
   logoUrl: PAPERLESS_LOGO,
   authors: ["powerhouse-inc"],
   categories: [PieceCategory.CONTENT_AND_FILES],
-  minimumSupportedRelease: "0.30.0",
   auth: paperlessAuth,
   actions: [
     uploadDocument,
