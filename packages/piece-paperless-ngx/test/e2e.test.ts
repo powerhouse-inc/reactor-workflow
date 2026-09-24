@@ -22,7 +22,7 @@ import { getTask } from "../pieces/paperless-ngx/lib/actions/get-task";
 import { searchDocuments } from "../pieces/paperless-ngx/lib/actions/search-documents";
 import { updateDocument } from "../pieces/paperless-ngx/lib/actions/update-document";
 import { uploadDocument } from "../pieces/paperless-ngx/lib/actions/upload-document";
-import { checkPaperlessConnection } from "../pieces/paperless-ngx/lib/auth";
+import { paperlessAuth } from "../pieces/paperless-ngx/lib/auth";
 import { documentUpdated, newDocument } from "../pieces/paperless-ngx/lib/triggers/document-trigger";
 import { MemoryStore, RecordingFiles, runAction, runHook } from "./helpers";
 
@@ -162,14 +162,17 @@ describe.skipIf(!baseUrl)("live paperless-ngx", () => {
   });
 
   it("labels the connection from a real server", async () => {
-    const identity = await checkPaperlessConnection({ auth });
+    const { props } = auth as { props: { base_url: string; token: string } };
+    const label = await paperlessAuth.getConnectionIdentifier!({
+      auth: props,
+      server: { apiUrl: "", publicUrl: "" },
+    });
 
-    expect(identity.username).toBe(username);
     // Negotiation picked a version this server actually allows.
-    expect([9, 10]).toContain(identity.apiVersion);
-    expect(identity.serverVersion).toMatch(/^\d+\.\d+\.\d+$/);
-    expect(identity.permissions.length).toBeGreaterThan(0);
-    console.log(`connected: ${identity.name}`);
+    expect(label).toMatch(
+      new RegExp(`^${username}@.+ \\(v\\d+\\.\\d+\\.\\d+, API (9|10)\\)$`),
+    );
+    console.log(`connected: ${label}`);
   });
 
   it("creates a tag by name, then finds the same one", async () => {

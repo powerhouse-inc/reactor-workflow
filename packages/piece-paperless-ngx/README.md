@@ -8,7 +8,7 @@ in `@powerhousedao/reactor-workflow` (see the root README).
 | | |
 | --- | --- |
 | Auth | API token (paperless: *Settings → User API token*; or `POST /api/token/` with the admin credentials) |
-| Connection check | `checkConnection` probes the user endpoint with the token and reports the server version as the connection label |
+| Connection check | `auth.validate` probes the user endpoint with the token; `auth.getConnectionIdentifier` labels the connection with the user, host, server and API version |
 | Verified against | **paperless-ngx 2.18.4** (the 2.18 API line) |
 
 ## The 2.18 API line

@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 import { customApiCall } from "../pieces/paperless-ngx/lib/actions/custom-api-call";
 import { getTask } from "../pieces/paperless-ngx/lib/actions/get-task";
 import { uploadDocument } from "../pieces/paperless-ngx/lib/actions/upload-document";
-import { checkPaperlessConnection } from "../pieces/paperless-ngx/lib/auth";
+import { paperlessAuth } from "../pieces/paperless-ngx/lib/auth";
 import { newDocument } from "../pieces/paperless-ngx/lib/triggers/document-trigger";
 import { MemoryStore, runAction, runHook } from "./helpers";
 
@@ -35,12 +35,16 @@ async function authFor(): Promise<unknown> {
 
 describe.skipIf(!baseUrl)("live paperless-ngx 2.18", () => {
   it("negotiates down to version 9 instead of failing", async () => {
-    const auth = await authFor();
-    const identity = await checkPaperlessConnection({ auth });
+    const { props } = (await authFor()) as {
+      props: { base_url: string; token: string };
+    };
+    const label = await paperlessAuth.getConnectionIdentifier!({
+      auth: props,
+      server: { apiUrl: "", publicUrl: "" },
+    });
 
-    expect(identity.apiVersion).toBe(9);
-    expect(identity.serverVersion).toMatch(/^2\.18\./);
-    console.log(`connected: ${identity.name}`);
+    expect(label).toMatch(/\(v2\.18\.\d+, API 9\)$/);
+    console.log(`connected: ${label}`);
   }, 60_000);
 
   it("caches the negotiated version, so the 406 happens once", async () => {

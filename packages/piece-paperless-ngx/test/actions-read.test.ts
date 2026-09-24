@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { checkPaperlessConnection } from "../pieces/paperless-ngx/lib/auth";
+import { paperlessAuth } from "../pieces/paperless-ngx/lib/auth";
 import { customApiCall } from "../pieces/paperless-ngx/lib/actions/custom-api-call";
 import { getDocument } from "../pieces/paperless-ngx/lib/actions/get-document";
 import { getDocumentFile } from "../pieces/paperless-ngx/lib/actions/get-document-file";
@@ -270,18 +270,33 @@ describe("custom_api_call", () => {
   });
 });
 
-describe("checkConnection", () => {
-  it("labels the connection with user, host, server and API version", async () => {
-    const identity = await checkPaperlessConnection({ auth: authFor(mock) });
+describe("paperlessAuth", () => {
+  const server = {
+    apiUrl: "",
+    publicUrl: "",
+    mintOidcToken: () => Promise.reject(new Error("unused")),
+  };
+  const flat = (token = "test-token") => ({ base_url: mock.baseUrl, token });
 
-    expect(identity.name).toMatch(/^archivist@127\.0\.0\.1:\d+ \(v3\.1\.3, API 10\)$/);
-    expect(identity.permissions).toContain("add_workflow");
+  it("labels the connection with user, host, server and API version", async () => {
+    const label = await paperlessAuth.getConnectionIdentifier?.({
+      auth: flat(),
+      server,
+    });
+
+    expect(label).toMatch(/^archivist@127\.0\.0\.1:\d+ \(v3\.1\.3, API 10\)$/);
   });
 
-  it("fails with the credential message on a bad token", async () => {
+  it("validates a good token and refuses a bad one with the credential message", async () => {
+    await expect(paperlessAuth.validate?.({ auth: flat(), server })).resolves.toEqual({
+      valid: true,
+    });
     await expect(
-      checkPaperlessConnection({ auth: authFor(mock, "nope") }),
-    ).rejects.toThrow(/rejected the API token/);
+      paperlessAuth.validate?.({ auth: flat("nope"), server }),
+    ).resolves.toEqual({
+      valid: false,
+      error: "The API token was rejected — mint a new one under My Profile.",
+    });
   });
 });
 

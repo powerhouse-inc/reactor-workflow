@@ -43,9 +43,8 @@ export function normalizeBaseUrl(raw: unknown): string {
   return trimmed;
 }
 
-// `ctx.auth` arrives shaped as { type: "CUSTOM_AUTH", props } from the reactor
-// (engine/connections.ts `shapeAuthValue`) and flat from Activepieces 0.32.0,
-// which hands `validate` the raw property value. Accept both.
+// An action's `ctx.auth` arrives shaped as { type: "CUSTOM_AUTH", props }, while
+// `validate` and `getConnectionIdentifier` are handed the flat props. Accept both.
 export function readAuth(auth: unknown): PaperlessCredentials {
   const source = isRecord(auth) && isRecord(auth.props) ? auth.props : auth;
   if (!isRecord(source)) {
