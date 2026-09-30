@@ -1,0 +1,14 @@
+{
+  // What ships: the piece sources only, declarations into the tree the export
+  // map's "types" entries name. The tests are typechecked by tsconfig.json.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist/types",
+    "composite": false,
+    "incremental": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["index.ts", "pieces/**/*.ts"],
+  "exclude": ["dist", "node_modules", ".tsbuild", "test"]
+}
