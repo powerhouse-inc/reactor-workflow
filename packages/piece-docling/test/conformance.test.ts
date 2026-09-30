@@ -144,7 +144,7 @@ describe.skipIf(!ready)("piece conformance (Tier-1)", () => {
     }
   });
 
-  it("describes all six actions with their props", async () => {
+  it("describes all seven actions with their props", async () => {
     const loaded = await loadPieceFromDir(bundleDir);
     const descriptor = buildDescriptor(loaded.piece, {
       packageName: PIECE,
@@ -158,6 +158,7 @@ describe.skipIf(!ready)("piece conformance (Tier-1)", () => {
       "get_result",
       "health",
       "submit_job",
+      "transcribe_url",
     ]);
     type ActionDescriptor = { name: string; props: { name: string }[] };
     const byName = Object.fromEntries(

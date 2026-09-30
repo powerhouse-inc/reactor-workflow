@@ -8,6 +8,7 @@ import { convertUrlAction } from "./lib/actions/convert-url.js";
 import { submitJobAction } from "./lib/actions/submit-job.js";
 import { getResultAction } from "./lib/actions/get-result.js";
 import { chunkAction } from "./lib/actions/chunk.js";
+import { transcribeUrlAction } from "./lib/actions/transcribe-url.js";
 
 const DOC_LOGO =
   "data:image/svg+xml," +
@@ -23,7 +24,7 @@ const result = createPiece({
   authors: ["froid"],
   categories: [PieceCategory.CONTENT_AND_FILES],
   auth: doclingAuth,
-  actions: [healthAction, convertFileAction, convertUrlAction, submitJobAction, getResultAction, chunkAction],
+  actions: [healthAction, convertFileAction, convertUrlAction, transcribeUrlAction, submitJobAction, getResultAction, chunkAction],
   triggers: [],
 });
 
