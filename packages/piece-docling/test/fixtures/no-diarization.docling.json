@@ -1,0 +1,22 @@
+{
+  "texts": [
+    {
+      "text": "Welcome back to the show.",
+      "source": [
+        { "kind": "track", "start_time": 0, "end_time": 2.4, "identifier": null, "voice": null }
+      ]
+    },
+    {
+      "text": "Today we are talking about document conversion.",
+      "source": [
+        { "kind": "track", "start_time": 2.9, "end_time": 8.1, "identifier": null, "voice": null }
+      ]
+    },
+    {
+      "text": "Let us get into it.",
+      "source": [
+        { "kind": "track", "start_time": 3661.5, "end_time": 3663.0, "identifier": null, "voice": null }
+      ]
+    }
+  ]
+}

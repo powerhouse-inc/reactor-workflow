@@ -106,3 +106,46 @@ describe("runConversion", () => {
     } finally { await mock.close(); }
   });
 });
+
+// docling-serve fetches an http source itself, so a private one (a Drive
+// file, a signed URL) needs its credentials travelling with the request.
+// Sending them this way also keeps the bytes out of the workflow entirely.
+describe("http source headers", () => {
+  it("passes the source headers through to docling-serve", async () => {
+    const mock = await startMockDocling({ apiKey: "k-test" });
+    try {
+      await runConversion({
+        auth: { baseUrl: mock.baseUrl, apiKey: "k-test" },
+        source: {
+          kind: "http",
+          url: "https://example.test/private.mp4",
+          headers: { Authorization: "Bearer drive-token" },
+        },
+        options: OPTS as never, mode: "sync", timeoutMs: 10_000, path: "convert",
+      });
+      const body = JSON.parse(mock.requestBodies[0] ?? "{}") as {
+        sources?: Array<Record<string, unknown>>;
+      };
+      expect(body.sources?.[0]).toMatchObject({
+        kind: "http",
+        url: "https://example.test/private.mp4",
+        headers: { Authorization: "Bearer drive-token" },
+      });
+    } finally { await mock.close(); }
+  });
+
+  it("omits the headers key when the source carries none", async () => {
+    const mock = await startMockDocling({ apiKey: "k-test" });
+    try {
+      await runConversion({
+        auth: { baseUrl: mock.baseUrl, apiKey: "k-test" },
+        source: { kind: "http", url: "https://example.test/a.pdf" },
+        options: OPTS as never, mode: "sync", timeoutMs: 10_000, path: "convert",
+      });
+      const body = JSON.parse(mock.requestBodies[0] ?? "{}") as {
+        sources?: Array<Record<string, unknown>>;
+      };
+      expect(body.sources?.[0]).not.toHaveProperty("headers");
+    } finally { await mock.close(); }
+  });
+});

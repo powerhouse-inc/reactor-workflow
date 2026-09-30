@@ -26,6 +26,14 @@ export const healthOutputFields: OutputField[] = [
   { key: "status", label: "Status" },
   { key: "versions", label: "Server Versions" },
 ];
+export const transcribeOutputFields: OutputField[] = [
+  { key: "transcript", label: "Transcript", description: "Markdown; speaker-labelled and timestamped where docling diarized the audio." },
+  { key: "speakers", label: "Speakers", description: "One entry per detected voice: { id, label }. Empty when no diarization ran." },
+  { key: "segments", label: "Segments", description: "One entry per utterance: { start, end, startLabel, speaker, text }. Timings in seconds." },
+  { key: "status", label: "Status", description: "success | partial_success | skipped | failure." },
+  { key: "errors", label: "Errors" },
+  { key: "processing_time", label: "Processing Time (s)" },
+];
 export const chunkOutputFields: OutputField[] = [
   { key: "chunks", label: "Chunks", description: "One entry per chunk: { text, page_no, start_chunk_no, end_chunk_no }." },
   { key: "processing_time", label: "Processing Time (s)" },

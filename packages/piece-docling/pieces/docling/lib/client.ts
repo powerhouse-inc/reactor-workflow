@@ -5,7 +5,10 @@ import type { ConvertDocumentsOptionsPayload } from "./options.js";
 export interface DoclingAuth { baseUrl: string; apiKey?: string; }
 export type DoclingSource =
   | { kind: "file"; filename: string; base64: string }
-  | { kind: "http"; url: string };
+  // `headers` ride along with the fetch docling-serve makes itself, which is
+  // what lets a private source (a Drive file, a signed URL) be converted
+  // without the bytes ever passing through the workflow.
+  | { kind: "http"; url: string; headers?: Record<string, string> };
 
 export interface ConvertDocumentResponse {
   document: {
@@ -63,9 +66,15 @@ function endpointPath(args: Pick<RunConversionArgs, "path" | "chunker">, async: 
 }
 
 function sourceBody(source: DoclingSource): Array<Record<string, unknown>> {
-  return [source.kind === "file"
-    ? { kind: "file", base64_string: source.base64, filename: source.filename }
-    : { kind: "http", url: source.url }];
+  if (source.kind === "file") {
+    return [{ kind: "file", base64_string: source.base64, filename: source.filename }];
+  }
+  // Omitted rather than sent empty: an empty object is a different request
+  // from no headers at all, and older servers reject the key outright.
+  const headers = source.headers && Object.keys(source.headers).length > 0
+    ? { headers: source.headers }
+    : {};
+  return [{ kind: "http", url: source.url, ...headers }];
 }
 
 // --- error mapping -----------------------------------------------------------

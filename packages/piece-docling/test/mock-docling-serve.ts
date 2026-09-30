@@ -21,6 +21,8 @@ export interface MockDoclingOptions {
   failJobs?: string[];
   backpressure?: number;
   neverFinish?: boolean;
+  /** Overrides MOCK_JSON as `json_content`, e.g. an ASR document with tracks. */
+  jsonDocument?: unknown;
 }
 
 export interface MockDocling {
@@ -59,20 +61,20 @@ function json(res: http.ServerResponse, status: number, body: unknown, headers?:
   res.end(JSON.stringify(body));
 }
 
-function documentPayload(filename: string, formats: string[]) {
+function documentPayload(filename: string, formats: string[], jsonDoc: unknown = MOCK_JSON) {
   return {
     filename,
     md_content: formats.includes("md") ? MOCK_MD : null,
-    json_content: formats.includes("json") ? MOCK_JSON : null,
+    json_content: formats.includes("json") ? jsonDoc : null,
     html_content: formats.includes("html") ? MOCK_HTML : null,
     text_content: formats.includes("text") ? MOCK_TEXT : null,
     doctags_content: formats.includes("doctags") ? MOCK_DOCTAGS : null,
   };
 }
 
-function successResponse(filename: string, formats: string[]) {
+function successResponse(filename: string, formats: string[], jsonDoc: unknown = MOCK_JSON) {
   return {
-    document: documentPayload(filename, formats),
+    document: documentPayload(filename, formats, jsonDoc),
     status: "success",
     errors: [],
     processing_time: 0.4,
@@ -211,7 +213,7 @@ export async function startMockDocling(opts: MockDoclingOptions = {}): Promise<M
       if (task.kind === "chunk") {
         return json(res, 200, { chunks: MOCK_CHUNKS, processing_time: 0.3 });
       }
-      return json(res, 200, successResponse(task.filename, task.formats));
+      return json(res, 200, successResponse(task.filename, task.formats, opts.jsonDocument));
     }
 
     if (req.method === "POST" && isSync) {
@@ -233,7 +235,7 @@ export async function startMockDocling(opts: MockDoclingOptions = {}): Promise<M
           processing_time: 0.1,
         });
       }
-      return json(res, 200, successResponse(String(filename), body.options?.to_formats ?? ["md"]));
+      return json(res, 200, successResponse(String(filename), body.options?.to_formats ?? ["md"], opts.jsonDocument));
     }
 
     return json(res, 404, { detail: `no route ${p}` });

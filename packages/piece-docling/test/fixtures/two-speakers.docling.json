@@ -1,0 +1,76 @@
+{
+  "texts": [
+    {
+      "text": "computer scientist e podcaster.",
+      "source": [
+        {
+          "kind": "track",
+          "start_time": 0.0,
+          "end_time": 2.02,
+          "identifier": null,
+          "voice": "SPEAKER_01"
+        }
+      ]
+    },
+    {
+      "text": "Since 2018, he has hosted the Lex Friedman podcast, where he interviews notable figures from various fields such as science, technology, sports, and politics.",
+      "source": [
+        {
+          "kind": "track",
+          "start_time": 2.46,
+          "end_time": 11.72,
+          "identifier": null,
+          "voice": "SPEAKER_01"
+        }
+      ]
+    },
+    {
+      "text": "Friedman rose to prominence in 2019 after Elon Musk praised his study, which concluded that drivers remained focused while using Tesla's semiai.",
+      "source": [
+        {
+          "kind": "track",
+          "start_time": 12.42,
+          "end_time": 20.02,
+          "identifier": null,
+          "voice": "SPEAKER_01"
+        }
+      ]
+    },
+    {
+      "text": "Il suo senso più puro è la base della Governaze.",
+      "source": [
+        {
+          "kind": "track",
+          "start_time": 20.02,
+          "end_time": 23.12,
+          "identifier": null,
+          "voice": "SPEAKER_00"
+        }
+      ]
+    },
+    {
+      "text": "La legislazione nelle democrazie moderne è il lavoro delle legislature, che esistono a livello locale, regionale in azionale creano le legge a propri e talloro livello e vincolanti per quelle sotto la loro giurisdizione.",
+      "source": [
+        {
+          "kind": "track",
+          "start_time": 24.06,
+          "end_time": 36.74,
+          "identifier": null,
+          "voice": "SPEAKER_00"
+        }
+      ]
+    },
+    {
+      "text": "Questi organi sono influenzati dallo bisti, grupp.",
+      "source": [
+        {
+          "kind": "track",
+          "start_time": 37.16,
+          "end_time": 39.98,
+          "identifier": null,
+          "voice": "SPEAKER_00"
+        }
+      ]
+    }
+  ]
+}
