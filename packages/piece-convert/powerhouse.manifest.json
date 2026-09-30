@@ -1,0 +1,21 @@
+{
+  "name": "@powerhousedao/piece-convert",
+  "description": "Convert PDF, DOCX and images to markdown with chunks, figures and an extraction score, through the Document Conversion add-on.",
+  "category": "Documents",
+  "publisher": {
+    "name": "@powerhousedao",
+    "url": "https://github.com/powerhouse-inc/reactor-workflow/tree/main/packages/piece-convert"
+  },
+  "documentModels": [],
+  "editors": [],
+  "apps": [],
+  "processors": [],
+  "subgraphs": [],
+  "pieces": [
+    {
+      "id": "@powerhousedao/piece-convert",
+      "name": "Document Conversion"
+    }
+  ],
+  "config": []
+}
