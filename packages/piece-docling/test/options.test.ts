@@ -238,6 +238,27 @@ describe("convertProps", () => {
     }
   });
 
+  // include_images is not include_page_images: one asks for the pictures and
+  // display formulas cut out of the pages, the other for whole-page renders.
+  // The Document Conversion add-on reads it as its figure pass; a real
+  // docling-serve reads it as "embed the images". Both want the same answer.
+  it("passes include_images through, distinct from include_page_images", () => {
+    expect(buildOptions({ include_images: true })).toMatchObject({
+      include_images: true,
+    });
+    expect(buildOptions({ include_page_images: true })).not.toHaveProperty(
+      "include_images",
+    );
+  });
+
+  it("leaves include_images out when the author did not ask", () => {
+    expect(buildOptions({})).not.toHaveProperty("include_images");
+  });
+
+  it("offers include_images as a prop", () => {
+    expect(convertProps.include_images).toBeDefined();
+  });
+
   // Every enrichment the builder offers must be one buildOptions accepts,
   // or the form would let an author pick something that throws at run time.
   it("offers only enrichments that map to a real flag", () => {

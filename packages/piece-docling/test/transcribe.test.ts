@@ -159,4 +159,27 @@ describe("transcribe_url", () => {
       transcribeUrlAction.run(ctx({ execution: "sync" })),
     ).rejects.toMatchObject({ kind: "VALIDATION" });
   });
+
+  // A recording almost never comes from a URL ending in .mp3 — a Drive or
+  // Dropbox share link has no extension at all, and the format is read from
+  // one. Without this the commonest source of a recording is unusable.
+  it("names the recording when the URL does not", async () => {
+    const mock = await startMockDocling({ apiKey: "k-test" });
+    try {
+      await transcribeUrlAction.run(
+        ctx(
+          {
+            url: "https://drive.google.com/uc?id=abc",
+            filename: "standup.mp3",
+            execution: "sync",
+          },
+          mock.baseUrl,
+        ),
+      );
+      const body = JSON.parse(mock.requestBodies[0]) as {
+        sources: { filename?: string }[];
+      };
+      expect(body.sources[0].filename).toBe("standup.mp3");
+    } finally { await mock.close(); }
+  });
 });

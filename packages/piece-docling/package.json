@@ -1,7 +1,7 @@
 {
   "name": "@powerhousedao/piece-docling",
-  "version": "1.0.0",
-  "description": "Piece for Docling (docling-serve v1): convert documents to Markdown, docling-document JSON, HTML, DocTags and plain text.",
+  "version": "1.1.0",
+  "description": "Piece for document conversion over the docling-serve v1 API: convert, chunk and transcribe with the Document Conversion add-on or a self-hosted docling-serve.",
   "type": "module",
   "exports": {
     ".": {
@@ -45,8 +45,7 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@powerhousedao/pieces-framework": "6.2.3-dev.20",
-    "zod": "4.3.6"
+    "@powerhousedao/pieces-framework": "6.2.3-dev.20"
   },
   "devDependencies": {
     "@powerhousedao/reactor-workflow": "6.2.3-dev.20",

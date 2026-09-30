@@ -1,18 +1,31 @@
 # @powerhousedao/piece-docling
 
-A first-party workflow piece for **docling-serve**: convert documents
+A first-party workflow piece for document conversion: convert documents
 (PDF, DOCX, PPTX, images, HTML, …) to Markdown, docling-document JSON,
-HTML, DocTags, or plain text. Works against a self-hosted docling-serve
-(the demo compose runs the stock CPU image) or a Docling for IBM watsonx
-endpoint, over the **v1 REST API**. Written against
-`@powerhousedao/pieces-framework` and run by the workflow runtime in
-`@powerhousedao/reactor-workflow` (see the root README).
+HTML, DocTags, or plain text, chunk them for retrieval, and transcribe
+audio and video. It speaks the **docling-serve v1 REST API**, and that
+one API reaches both servers Powerhouse runs:
+
+| Server | What it is | Point the connection at |
+| --- | --- | --- |
+| **Document Conversion add-on** | `@powerhousedao/docling-service`, a wrapper over `docling.rs`, enabled per environment in Vetra. No ingress, no credentials — reachable only from inside the environment. | `CONVERT_SERVICE_URL` (`http://<env>-docling…:5011`) |
+| **docling-serve** | The stock Python server, self-hosted (the demo compose runs the CPU image) or Docling for IBM watsonx. | Its own URL, port 5001 by default |
+
+Everything works against both. The add-on additionally measures things
+docling-serve's response shape has no field for — how much of the
+document's own text survived, which rung of the OCR ladder read it,
+whether OCR is worth offering — and returns them under `powerhouse`,
+which is simply absent from a stock docling-serve. Read it with `?.`
+and a workflow runs unchanged against either.
+
+> Using the add-on also needs the **Workflows** add-on to allow the
+> private address it lives on — see `PH_WORKFLOWS_EGRESS_ALLOW_ADDRESSES`.
 
 | | |
 | --- | --- |
-| Auth | Optional API key (the demo server runs unauthenticated — leave it empty) |
+| Auth | Optional API key (the add-on takes none; the demo server runs unauthenticated — leave it empty) |
 | Connection check | `checkConnection` probes a key-gated `/v1/` route with the configured key and reports the server version as the connection label |
-| Verified against | **docling-serve v1.32.0** |
+| Verified against | **docling-serve v1.32.0**, **docling-service 0.4.1** |
 
 ## The v1 API surface this piece uses
 
@@ -48,14 +61,27 @@ Notes from the live v1.32.0:
 | --- | --- |
 | **Health** | `/health` + `/version` — service status without auth |
 | **Convert file** | An attachment (the workflow's file handoff) via `/v1/convert/file`; sync or async |
-| **Convert URL** | An `http` source via `/v1/convert/source` — subject to the SSRF gate (globally routable hosts) |
+| **Convert URL** | An `http` source via `/v1/convert/source` — the *server* fetches it, so the bytes never pass through the workflow, subject to the SSRF gate (globally routable hosts) |
+| **Transcribe URL** | Audio or video via ASR, returning timed segments, the speakers it detected and a rendered transcript |
 | **Submit job** | Async submit (convert or chunk); returns the task id for a later **Get result** |
 | **Get result** | `/v1/result/{task_id}` for a previously submitted job |
 | **Chunk** | `/v1/chunk/{hybrid,hierarchical}/source` — converts and chunks in one call |
 
 All conversion actions share the same options block (format, OCR, table
-mode, page range, …); defaults match the stock image's out-of-the-box
-behavior (markdown, OCR on).
+mode, page range, enrichments, …); defaults match the stock image's
+out-of-the-box behavior (markdown, OCR on) and anything left alone is
+omitted from the request, so the server keeps owning its own defaults.
+
+Two props are worth calling out:
+
+- **Filename** (on *Convert URL* and *Transcribe URL*) names the document
+  when the URL does not. The format is read from the extension, and a
+  share link — `drive.google.com/uc?id=…` — carries none. Leave it empty
+  when the URL ends in the file's own name.
+- **Include Figures** returns the pictures and display formulas. The
+  add-on cuts them out of the pages as PNGs; a docling-serve embeds the
+  images it already extracted. It costs a second pass and makes the
+  response much larger, so it is off by default.
 
 ## Build
 

@@ -88,6 +88,42 @@ describe("convert_url", () => {
     } finally { await mock.close(); }
   });
 
+  // A share link carries no extension — drive.google.com/uc?id=… is the case
+  // — and the format is read from one, so the author is allowed to name the
+  // document. The name rides on the source, where the server reads it.
+  it("sends an explicit filename on the source when one is given", async () => {
+    const mock = await startMockDocling({ apiKey: "k-test" });
+    try {
+      await convertUrlAction.run(
+        ctx(
+          {
+            url: "https://drive.google.com/uc?id=abc",
+            filename: "notes.pdf",
+            execution: "sync",
+          },
+          mock.baseUrl,
+        ),
+      );
+      const body = JSON.parse(mock.requestBodies[0]) as {
+        sources: { filename?: string }[];
+      };
+      expect(body.sources[0].filename).toBe("notes.pdf");
+    } finally { await mock.close(); }
+  });
+
+  it("leaves the filename off when the URL already carries one", async () => {
+    const mock = await startMockDocling({ apiKey: "k-test" });
+    try {
+      await convertUrlAction.run(
+        ctx({ url: "https://example.com/x.pdf", execution: "sync" }, mock.baseUrl),
+      );
+      const body = JSON.parse(mock.requestBodies[0]) as {
+        sources: { filename?: string }[];
+      };
+      expect(body.sources[0].filename).toBeUndefined();
+    } finally { await mock.close(); }
+  });
+
   it("rejects zip URLs before hitting the server", async () => {
     const mock = await startMockDocling({ apiKey: "k-test" });
     try {

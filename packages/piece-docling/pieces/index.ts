@@ -10,7 +10,7 @@ import type { PackagePiece } from "@powerhousedao/pieces-framework";
 export const pieces: PackagePiece[] = [
   {
     name: "@powerhousedao/piece-docling",
-    version: "1.0.0",
+    version: "1.1.0",
     entry: "dist/node/pieces/docling/index.mjs",
   },
 ];

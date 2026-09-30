@@ -75,6 +75,12 @@ export const transcribeUrlAction = createAction({
       description:
         "URL of the audio or video to transcribe. docling-serve downloads it itself, so the bytes never pass through the workflow.",
     }),
+    filename: Property.ShortText({
+      displayName: "Filename",
+      required: false,
+      description:
+        "Names the recording when the URL does not — a Drive or Dropbox share link carries no extension, and the format is read from one. Leave empty when the URL ends in the file's own name (…/standup.mp3).",
+    }),
     headers: Property.Object({
       displayName: "Source Headers",
       required: false,
@@ -90,12 +96,16 @@ export const transcribeUrlAction = createAction({
       throw new DoclingError("VALIDATION", "The recording URL is required.");
     }
     const headers = normalizeHeaders(ctx.propsValue.headers);
+    const given = ctx.propsValue.filename;
+    const filename =
+      typeof given === "string" && given.trim() ? given.trim() : undefined;
 
     const result = await runConversion({
       auth: authFromCtx(ctx),
       source: {
         kind: "http",
         url: raw.trim(),
+        ...(filename ? { filename } : {}),
         ...(headers ? { headers } : {}),
       },
       options: transcribeOptions(),
