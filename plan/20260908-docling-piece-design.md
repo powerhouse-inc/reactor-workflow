@@ -73,11 +73,38 @@ schemas in `docling-project/docling` under `docling/datamodel/service/*`.
 default `accurate`), `do_table_structure` (default true), `page_range` (**1-based `[start,end]`** —
 the v1 way to cap pages; there is no per-request `max_pages`; the piece exposes it as a
 ShortText `start[-end]` builder field parsed to the tuple at runtime — `"5"` = that page only,
-`"5-"` = to the last page), `pdf_backend`
-(`pypdfium2|docling_parse|threaded_docling_parse`, default `threaded_docling_parse`),
-`image_export_mode` (`placeholder|embedded|referenced`, default `placeholder`), `pipeline`
-(`legacy|standard|native|vlm|asr`, default `standard`), enrichment flags (formula, code, picture
-classification/description, charts), `document_timeout`, `abort_on_error`.
+`"5-"` = to the last page), `pdf_backend`, `image_export_mode`
+(`placeholder|embedded|referenced`, default `placeholder`), `pipeline`
+(`legacy|standard|native|vlm|asr`, default `standard`), enrichment flags,
+`document_timeout`, `abort_on_error`.
+
+> **Corrected 30 September 2026** against the live `/openapi.json` of a running
+> server (docling-serve **1.31.0**), while scoping the option work. The summary
+> above was written from the docs and is wrong in three ways; `ConvertDocumentsOptions`
+> carries **45 fields**, not the ~15 listed here.
+>
+> - **`pdf_backend` defaults to `docling_parse`**, not `threaded_docling_parse`, and
+>   takes six values, not three: `pypdfium2`, `docling_parse`,
+>   `threaded_docling_parse`, `dlparse_v1`, `dlparse_v2`, `dlparse_v4`.
+> - **OCR has two knobs, not one**: `ocr_engine` *and* `ocr_preset`, both defaulting
+>   to `"auto"`, plus `ocr_custom_config`. Neither carries an enum in the schema, so
+>   neither can be a safe dropdown. `ocr_lang` is `array<string>`, not a scalar.
+> - **The enrichment flags** are `do_code_enrichment`, `do_formula_enrichment`,
+>   `do_picture_classification`, `do_chart_extraction` (extraction, not
+>   "understanding") and `do_picture_description` — all default `false`. Picture
+>   description carries `picture_description_area_threshold`, `_local`, `_api` and
+>   `_preset` alongside it.
+>
+> Undocumented here and worth knowing: `do_pdf_heading_hierarchy` with a
+> `pdf_heading_hierarchy_options` object (heading structure from bookmarks,
+> numbering and styles), `table_cell_matching`, `include_images` /
+> `include_page_images` / `images_scale`, `md_page_break_placeholder`,
+> `chunking_options` / `chunking_preset` present on the *convert* options, a full
+> `vlm_pipeline_*` family, and a `*_custom_config` escape hatch on layout, table
+> structure, OCR, code/formula, picture description and VLM.
+>
+> Because these defaults move, the piece sends an option only when the author set
+> one, rather than restating a default it believes in.
 
 **Chunk request (`/v1/chunk/{hybrid|hierarchical}/source[/async]` JSON):** the chunk request
 model (`BaseChunkDocumentsRequest`) names the conversion settings **`convert_options`** — not

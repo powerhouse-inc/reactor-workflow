@@ -3,6 +3,8 @@ import { doclingAuth, authFromCtx } from "../auth.js";
 import { DoclingError } from "../errors.js";
 import { normalizeFile } from "../files.js";
 import { buildOptions, convertProps, executionMode, timeoutMs } from "../options.js";
+
+const { format: _formatIsReplacedByChunking, ...conversionProps } = convertProps;
 import { runChunk, type DoclingSource } from "../client.js";
 import { chunkOutputFields } from "../output-schemas.js";
 
@@ -33,12 +35,10 @@ export const chunkAction = createAction({
         ],
       },
     }),
-    ocr: convertProps.ocr,
-    table_mode: convertProps.table_mode,
-    page_range: convertProps.page_range,
-    image_mode: convertProps.image_mode,
-    execution: convertProps.execution,
-    timeout_seconds: convertProps.timeout_seconds,
+    // Every conversion control but `format`: chunking replaces the output
+    // formats, and listing the rest by hand is how each newly added option
+    // went missing here.
+    ...conversionProps,
   },
   run: async (ctx) => {
     const p = ctx.propsValue as Record<string, unknown>;
