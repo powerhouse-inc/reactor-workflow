@@ -4,6 +4,7 @@ export type DoclingErrorKind =
   | "SYNC_TIMEOUT"
   | "OVERLOADED"
   | "JOB_FAILED"
+  | "UNSUPPORTED"
   | "BAD_FILE"
   | "DEADLINE";
 

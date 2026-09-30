@@ -8,7 +8,15 @@ export type DoclingSource =
   // `headers` ride along with the fetch docling-serve makes itself, which is
   // what lets a private source (a Drive file, a signed URL) be converted
   // without the bytes ever passing through the workflow.
-  | { kind: "http"; url: string; headers?: Record<string, string> };
+  // `filename` names a document the URL does not — a share link carries its
+  // name in a query parameter or not at all, and the format is read from the
+  // extension. Upstream has no such field and ignores it.
+  | {
+      kind: "http";
+      url: string;
+      filename?: string;
+      headers?: Record<string, string>;
+    };
 
 export interface ConvertDocumentResponse {
   document: {
@@ -22,6 +30,32 @@ export interface ConvertDocumentResponse {
   status: "success" | "partial_success" | "skipped" | "failure";
   errors?: Array<Record<string, unknown>>;
   processing_time?: number;
+  /**
+   * What the Document Conversion add-on measures that docling-serve's shape
+   * has no field for. Always absent against a stock docling-serve, so every
+   * read of it is optional — that is the point of the namespace.
+   */
+  powerhouse?: PowerhouseMeasurements;
+}
+
+/** @see ConvertDocumentResponse.powerhouse */
+export interface PowerhouseMeasurements {
+  /** Which service answered: "docling.rs" is the add-on. */
+  backend?: string;
+  /** Which rung of the OCR ladder read the text. */
+  textSource?: "docling" | "pdfjs" | "tesseract" | "docling-ocr";
+  needsOcr?: boolean;
+  pages?: number;
+  /** How much of the document's own text survived, as a floor not a proof. */
+  quality?: { coverage?: number; [k: string]: unknown };
+  /** OCR worth running, and roughly what it would cost. */
+  ocrOffer?: { via?: string; estimateSeconds?: number };
+  /** Pictures and display formulas as PNGs; only when Include Figures is on. */
+  figures?: unknown[];
+  figureStats?: unknown;
+  /** Whether the file had to be repaired before it could be read. */
+  normalised?: string | null;
+  ocr?: unknown;
 }
 
 export interface TaskStatusResponse {
@@ -74,7 +108,14 @@ function sourceBody(source: DoclingSource): Array<Record<string, unknown>> {
   const headers = source.headers && Object.keys(source.headers).length > 0
     ? { headers: source.headers }
     : {};
-  return [{ kind: "http", url: source.url, ...headers }];
+  return [
+    {
+      kind: "http",
+      url: source.url,
+      ...(source.filename ? { filename: source.filename } : {}),
+      ...headers,
+    },
+  ];
 }
 
 // --- error mapping -----------------------------------------------------------
@@ -94,6 +135,11 @@ function mapHttpStatus(status: number, detail: unknown): DoclingError {
       return new DoclingError("VALIDATION", `docling-serve rejected the request (422): ${short}`);
     case 404:
       return new DoclingError("VALIDATION", `docling-serve: unknown endpoint or task (404): ${short}`);
+    case 415:
+      // A permanent answer about the file, not a server fault: the same bytes
+      // meet the same refusal, so this must not be retryable. /health lists
+      // what the server actually reads.
+      return new DoclingError("UNSUPPORTED", `docling-serve does not read this file's format (415): ${short}. Check the formats the server reports on /health.`);
     case 504:
       return new DoclingError("SYNC_TIMEOUT", "Conversion exceeded the server's sync limit (504). Re-run with execution mode “auto (async)”, or raise the server's DOCLING_SERVE_MAX_SYNC_WAIT.");
     case 429:

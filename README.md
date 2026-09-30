@@ -8,7 +8,7 @@ it by installing the package.
 | Piece | Package | Target service |
 | --- | --- | --- |
 | Paperless-ngx | [`packages/piece-paperless-ngx`](packages/piece-paperless-ngx/README.md) | paperless-ngx 2.18.x (self-hosted) |
-| Docling | [`packages/piece-docling`](packages/piece-docling/README.md) | docling-serve v1.32.0 (self-hosted or watsonx) |
+| Docling | [`packages/piece-docling`](packages/piece-docling/README.md) | the Document Conversion add-on, or docling-serve v1.32.0 (self-hosted or watsonx) — one piece, one API, either server |
 
 Each README documents the exact service API line the piece was verified
 against, the version pins, and the API oddities that shape the implementation.

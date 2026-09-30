@@ -17,6 +17,8 @@ export const MOCK_CHUNKS = [
 export interface MockDoclingOptions {
   apiKey?: string;
   failAuthAlways?: boolean;
+  /** Answer every /v1 request with this HTTP status, for the error mapping. */
+  failStatus?: number;
   syncSlow?: boolean;
   failJobs?: string[];
   backpressure?: number;
@@ -144,6 +146,9 @@ export async function startMockDocling(opts: MockDoclingOptions = {}): Promise<M
     const isAsync = p.endsWith("/async");
     const isSync = isConvert || isChunk;
 
+    if (opts.failStatus) {
+      return json(res, opts.failStatus, { detail: "mock failure" });
+    }
     if (isSync && !isAsync && opts.syncSlow) return json(res, 504, { detail: "sync timeout" });
     if (isSync && backpressureLeft > 0) {
       backpressureLeft--;

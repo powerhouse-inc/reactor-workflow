@@ -20,6 +20,7 @@ export interface ActionOptionsProps {
   table_cell_matching?: boolean;
   heading_hierarchy?: boolean;
   include_page_images?: boolean;
+  include_images?: boolean;
   images_scale?: number;
   document_timeout?: number;
   abort_on_error?: boolean;
@@ -41,6 +42,7 @@ export interface ConvertDocumentsOptionsPayload {
   table_cell_matching?: boolean;
   do_pdf_heading_hierarchy?: boolean;
   include_page_images?: boolean;
+  include_images?: boolean;
   images_scale?: number;
   document_timeout?: number;
   abort_on_error?: boolean;
@@ -114,6 +116,7 @@ export function buildOptions(props: ActionOptionsProps): ConvertDocumentsOptions
   set("table_cell_matching", props.table_cell_matching);
   set("do_pdf_heading_hierarchy", props.heading_hierarchy);
   set("include_page_images", props.include_page_images);
+  set("include_images", props.include_images);
   set("images_scale", props.images_scale);
   set("document_timeout", props.document_timeout);
   set("abort_on_error", props.abort_on_error);
@@ -315,6 +318,16 @@ export const convertProps = {
     description:
       "Derive a heading structure for PDFs from bookmarks, numbering and styles.",
   }),
+  include_images: Property.Checkbox({
+    displayName: "Include Figures",
+    description:
+      "Return the pictures and display formulas found in the document. The " +
+      "Document Conversion add-on cuts them out of the pages as PNGs; a " +
+      "docling-serve embeds the images it already extracted. Costs a second " +
+      "pass over the pages and makes the response much larger.",
+    required: false,
+  }),
+
   include_page_images: Property.Checkbox({
     displayName: "Include Page Images",
     required: false,

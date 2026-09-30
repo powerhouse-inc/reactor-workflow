@@ -11,6 +11,17 @@ export const convertOutputFields: OutputField[] = [
   { key: "status", label: "Status", description: "success | partial_success | skipped | failure." },
   { key: "errors", label: "Errors" },
   { key: "processing_time", label: "Processing Time (s)" },
+  {
+    key: "powerhouse",
+    label: "Conversion Measurements",
+    description:
+      "Only from the Document Conversion add-on, which measures more than " +
+      "docling-serve's response shape has room for: quality.coverage (how " +
+      "much of the document's own text survived), textSource (which rung of " +
+      "the OCR ladder read it), ocrOffer (OCR worth running, with a cost " +
+      "estimate), pages, figures and backend. Absent against a stock " +
+      "docling-serve, so read it with `?.`.",
+  },
 ];
 export const jobOutputFields: OutputField[] = [
   { key: "task_id", label: "Task ID" },
@@ -33,6 +44,17 @@ export const transcribeOutputFields: OutputField[] = [
   { key: "status", label: "Status", description: "success | partial_success | skipped | failure." },
   { key: "errors", label: "Errors" },
   { key: "processing_time", label: "Processing Time (s)" },
+  {
+    key: "powerhouse",
+    label: "Conversion Measurements",
+    description:
+      "Only from the Document Conversion add-on, which measures more than " +
+      "docling-serve's response shape has room for: quality.coverage (how " +
+      "much of the document's own text survived), textSource (which rung of " +
+      "the OCR ladder read it), ocrOffer (OCR worth running, with a cost " +
+      "estimate), pages, figures and backend. Absent against a stock " +
+      "docling-serve, so read it with `?.`.",
+  },
 ];
 export const chunkOutputFields: OutputField[] = [
   { key: "chunks", label: "Chunks", description: "One entry per chunk: { text, page_no, start_chunk_no, end_chunk_no }." },

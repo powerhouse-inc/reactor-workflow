@@ -148,4 +148,23 @@ describe("http source headers", () => {
       expect(body.sources?.[0]).not.toHaveProperty("headers");
     } finally { await mock.close(); }
   });
+
+  // 415 is a permanent answer about the file, not a server fault: retrying
+  // sends the same bytes to the same refusal. A generic JOB_FAILED hides both
+  // facts, and the recovery — check what the server reads — is specific.
+  it("maps 415 to an UNSUPPORTED format error that is not retryable", async () => {
+    const mock = await startMockDocling({ apiKey: "k-test", failStatus: 415 });
+    try {
+      await expect(
+        runConversion({
+          auth: { baseUrl: mock.baseUrl, apiKey: "k-test" },
+          source: { kind: "http", url: "https://example.com/x.pdf" },
+          options: OPTS as never,
+          mode: "sync",
+          timeoutMs: 5000,
+          path: "convert",
+        }),
+      ).rejects.toMatchObject({ kind: "UNSUPPORTED", retryable: false });
+    } finally { await mock.close(); }
+  });
 });

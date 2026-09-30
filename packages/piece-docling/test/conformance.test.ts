@@ -23,7 +23,15 @@ const packageRoot = path.dirname(
   path.dirname(fileURLToPath(import.meta.url)),
 );
 const PIECE = "@powerhousedao/piece-docling";
-const VERSION = "1.0.0";
+// Read, not repeated: the build already refuses a pieces/index.ts whose
+// version disagrees with package.json, so the one place this test can add is
+// checking that what a host *reads* is that same version. Hardcoding it here
+// only breaks the suite on every release.
+const VERSION = (
+  JSON.parse(
+    await readFile(path.join(packageRoot, "package.json"), "utf8"),
+  ) as { version: string }
+).version;
 const entryPath = path.join(
   packageRoot,
   "dist/node/pieces/docling/index.mjs",
